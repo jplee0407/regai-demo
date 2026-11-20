@@ -1,4 +1,4 @@
-import { judgeChange, inspectionSchedule, checkLabel, activeVersion, daysBetween, label, addDays, impact } from './engine.js';
+import { judgeChange, inspectionSchedule, checkLabel, activeVersion, daysBetween, label, addDays, impact, qtyJudge, siteGroup } from './engine.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -18,7 +18,7 @@ const sitePill = id => `<span class="pill ${id === 'HQ' ? 'gray' : 'navy'}" styl
 const ST = ['대기', '진행 중', '완료'];
 
 // ---------------------------------------------------------------- 상태 저장 (브라우저 localStorage)
-const KEY = 'regai-demo-v4';
+const KEY = 'regai-demo-v5';
 const nowStr = () => new Date().toLocaleString('sv-SE').slice(0, 16);
 let S;
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* 저장 불가 환경 */ } }
@@ -64,6 +64,7 @@ function knowledge(apps = S.approvals) {
     if (prev.시행일 < a.시행일) prev.폐지일 = a.시행일;
     r.버전.push(nv);
   }
+  for (const r of K.규칙) { const rv = S.review && S.review[r.id]; if (rv && rv.상태 === '확정') { const v = r.버전.find(x => !x.폐지일) || r.버전[r.버전.length - 1]; v.승인 = `${rv.검토자} 확정 (${(rv.일시 || '').slice(0, 10)})`; } }
   // 승인된 고시의 바뀐 조문을 조문 KB에 새 버전으로 추가
   for (const n of NOTICES.filter(n => approvedNotices.has(n.id))) {
     for (const c of n.변경조문) {
@@ -79,9 +80,9 @@ function knowledge(apps = S.approvals) {
 }
 let K;
 function qtyAt(m, date) {
-  const ov = (K.수량[m.CAS] || []).filter(x => x.시행일 <= date).sort((a, b) => a.시행일 < b.시행일 ? -1 : 1).pop();
+  const j = qtyJudge(K, { CAS: m.CAS, 함량: m.함량, 보유량: m.최대보유량_t, 성상: m.성상 }, date);
   const fut = (K.수량[m.CAS] || []).filter(x => x.시행일 > date).sort((a, b) => a.시행일 < b.시행일 ? -1 : 1)[0];
-  return { 하위: ov ? ov.하위 : m.규정수량_하위_t, 상위: m.규정수량_상위_t, 예정: fut };
+  return { ...j, 예정: fut };
 }
 function mocDue(m, date) {
   const r = judgeChange(K, { ...mocFlags(m), 변경완료_예정일: m.변경완료_예정일 }, date)[0];
@@ -166,7 +167,7 @@ function analyze(n) {
 
 // ---------------------------------------------------------------- 초기 상태 (시연용: 일부 고시는 이미 진행 중)
 function seed() {
-  S = { v: 4, notices: {}, approvals: [], prop: {}, log: [], checked: null };
+  S = { v: 5, review: {}, notices: {}, approvals: [], prop: {}, log: [], checked: null };
   for (const n of NOTICES.filter(n => n.초기상태)) {
     const st = n.초기상태;
     (n.규칙제안 || []).forEach((p, i) => { if (!st.규칙승인) return; S.prop[`${n.id}:${i}`] = '승인'; S.approvals.push({ notice: n.id, idx: i, 규칙: p.규칙, 종류: p.종류, 값: p.제안, CAS: p.CAS, 시행일: p.시행일, 근거: p.근거, 승인자: st.승인자, 일시: st.분석일 + ' 15:00', 의견: '개정 조문과 일치 확인' }); });
@@ -193,7 +194,7 @@ function seed() {
   save();
 }
 try { S = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { S = null; }
-if (!S || S.v !== 4) seed();
+if (!S || S.v !== 5) seed();
 K = knowledge();
 
 function nstate(n) {
@@ -214,7 +215,7 @@ let curTab = 't1';
 function showTab(t) {
   curTab = t;
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.t === t));
-  ['t1', 't2', 't3', 't4', 't5', 't6', 't7'].forEach(x => $(x).classList.toggle('hidden', x !== t));
+  ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'].forEach(x => $(x).classList.toggle('hidden', x !== t));
   render();
   window.scrollTo({ top: 0 });
 }
@@ -251,9 +252,11 @@ function renderSite() {
     const acc = site.물질.filter(m => m.구분.includes('사고대비')).length;
     const mocs = site.변경관리.filter(m => m.상태 === '진행').length;
     const on = curSite === site.id;
+    const G = siteGroup(K, site, base());
     return `<div class="ncard" data-site="${site.id}" style="${on ? 'border-color:var(--blue);box-shadow:0 0 0 2px var(--lblue)' : ''}">
       <div class="row between"><b style="font-size:16px;color:var(--navy)">${esc(site.사업장)}</b><span class="pill line">${site.사업장군}</span></div>
-      <div class="muted" style="margin:2px 0 10px">${esc(site.기본정보.업종)} · ${esc(site.기본정보.종업원)}</div>
+      <div class="muted" style="margin:2px 0 6px">${esc(site.기본정보.업종)} · ${esc(site.기본정보.종업원)}</div>
+      <div class="small" style="margin-bottom:8px;padding:6px 8px;border-radius:6px;background:${G.결과 === site.사업장군 ? 'var(--lgreen)' : 'var(--lorange)'}">계획서 작성수준 판정 <b>${esc(G.결과)}</b> <span class="muted">(규칙 ${G.규칙} · 고시 기준)</span>${G.결과 !== site.사업장군 ? ` — 등록값 ${site.사업장군}과 다름, 확인 필요` : ' — 등록값과 일치'}</div>
       <div class="grid4" style="gap:6px">
         <div><div style="font-size:19px;font-weight:800;color:var(--navy)">${site.물질.length}</div><div class="muted small">유해화학물질 (사고대비 ${acc})</div></div>
         <div><div style="font-size:19px;font-weight:800;color:var(--navy)">${site.시설.length}</div><div class="muted small">취급시설</div></div>
@@ -270,13 +273,15 @@ function renderSite() {
   $('permitTable').innerHTML = `<tr>${sh}<th>허가 종류</th><th>허가번호</th><th>최근 변경</th></tr>` + ss.flatMap(site => site.영업허가.map(p => `<tr>${sc(site.id)}<td>${esc(p.종류)}</td><td class="small">${esc(p.번호)}</td><td>${p.최근변경}</td></tr>`)).join('');
   $('planInfo').innerHTML = ss.map(site => { const pl = site.계획서; return (multi ? `<b style="grid-column:1/3;color:var(--navy);margin-top:6px">${esc(site.사업장)}</b>` : '') +
     [['최초 제출', pl.최초제출], ['최근 변경 제출', pl.최근변경제출], ['이행점검', pl.이행점검], ['결과', pl.결과], ['총괄영향범위', pl.총괄영향범위]].map(([k, v]) => `<b>${k}</b><span>${esc(v)}</span>`).join(''); }).join('');
-  $('chemTable').innerHTML = `<tr>${sh}<th>물질</th><th>CAS</th><th>UN</th><th>구분</th><th class="num">최대 보유량</th><th class="num">하위 규정수량</th><th class="num">배수</th><th class="num">상위 규정수량</th><th>취급시설</th><th>MSDS 개정</th></tr>` +
+  const gp = g => ({ '상위 이상': 'red', '하위 이상': 'orange', '최하위 이상': 'navy', '최하위 미만': 'gray' }[g] || 'gray');
+  $('chemTable').innerHTML = `<tr>${sh}<th>물질</th><th>CAS</th><th>함량·성상</th><th class="num">최대 보유량</th><th>적용 기준 (고시)</th><th class="num">함량기준</th><th class="num">최하위</th><th class="num">하위</th><th class="num">상위</th><th>구간</th><th class="num">하위 배수</th><th>취급시설</th></tr>` +
     ss.flatMap(site => site.물질.map(m => {
       const q = qtyAt(m, base());
-      const mul = m.최대보유량_t / q.하위;
-      return `<tr>${sc(site.id)}<td><b>${esc(m.이름)}</b></td><td>${m.CAS}</td><td>${m.UN}</td><td class="small">${esc(m.구분)}</td><td class="num">${m.최대보유량_t} t</td>
-        <td class="num">${q.하위} t${q.예정 ? `<br><span class="pill orange">${q.예정.시행일}부터 ${q.예정.하위} t</span>` : ''}</td>
-        <td class="num"><b>${mul.toFixed(1)}</b>${q.예정 ? `<br><span class="muted">→ ${(m.최대보유량_t / q.예정.하위).toFixed(1)}</span>` : ''}</td><td class="num">${q.상위} t</td><td>${m.시설.join(', ')}</td><td>${m.MSDS개정}</td></tr>`;
+      if (!q.해당) return `<tr>${sc(site.id)}<td><b>${esc(m.이름)}</b></td><td>${m.CAS}</td><td>${m.함량}% · ${esc(m.성상)}</td><td class="num">${m.최대보유량_t} t</td><td colspan="7" class="small muted">${esc(q.사유)}</td><td>${m.시설.join(', ')}</td></tr>`;
+      return `<tr>${sc(site.id)}<td><b>${esc(m.이름)}</b><div class="muted small">${esc(m.구분)}</div></td><td>${m.CAS}</td><td>${m.함량}% · ${esc(m.성상)}</td><td class="num">${m.최대보유량_t} t</td>
+        <td class="small"><span class="pill ${q.표 === '별표3' ? 'red' : 'line'}">${q.표 === '별표3' ? '별표3 사고대비' : '별표2 ' + esc(q.구분)}</span><div class="muted">${esc(q.물질명.slice(0, 28))}</div>${q.메모.length ? `<div class="muted" title="${esc(q.메모.join(' / '))}">ⓘ ${esc(q.메모[0].slice(0, 30))}</div>` : ''}</td>
+        <td class="num">${q.함량기준 ?? '-'}%</td><td class="num">${q.최하위 ?? '-'}</td><td class="num"><b>${q.하위 ?? '-'}</b>${q.예정 ? `<br><span class="pill orange">${q.예정.시행일}부터 ${q.예정.하위}</span>` : ''}</td><td class="num">${q.상위 ?? '-'}</td>
+        <td><span class="pill ${gp(q.구간)}">${q.구간}</span></td><td class="num"><b>${q.배수_하위 ?? '-'}</b></td><td>${m.시설.join(', ')}</td></tr>`;
     })).join('');
   const r242 = activeVersion(K.규칙.find(r => r.id === 'R-24-2'), base());
   $('facDesc').textContent = `다음 검사 기한은 규칙 R-24-2 v${r242.버전}(사업장 군별 결정표)으로 기준일 ${base()}에 계산 — ${ss.map(x => `${x.약칭} ${x.사업장군}`).join(' · ')}`;
@@ -657,17 +662,21 @@ function detailHtml() {
 function ruleBody(r, v, edit) {
   const bind = (path, val, w = 220, num = false) => edit ? `<input type="${num ? 'number' : 'text'}" data-bind="${path}" ${num ? 'data-num="1"' : ''} value="${esc(val)}" style="width:${w}px">` : `<b>${esc(val)}</b>`;
   if (r.유형 === '조건판정') {
-    const conds = v.조건.any.map((c, i) => {
-      if (c.all) return `<li><b>모두 해당:</b> ${c.all.map((x, j) => `${edit ? bind(`버전.조건.any.${i}.all.${j}.설명`, x.설명, 150) : `<b>${esc(x.설명)}</b>`} ${citeChip(x.근거)}`).join(' <b>+</b> ')} ${edit ? `<a href="#" data-act="cond-del" data-v="${i}" style="color:var(--red)">삭제</a>` : ''}</li>`;
-      return `<li>${edit ? bind(`버전.조건.any.${i}.설명`, c.설명, 230) : `<b>${esc(c.설명)}</b>`} <span class="muted small">(${esc(c.필드)})</span> ${citeChip(c.근거)} ${edit ? `<a href="#" data-act="cond-del" data-v="${i}" style="color:var(--red)">삭제</a>` : ''}</li>`;
+    const LK = v.조건.any ? 'any' : 'all', LIST = v.조건[LK];
+    const conds = LIST.map((c, i) => {
+      if (c.all) return `<li><b>모두 해당:</b> ${c.all.map((x, j) => `${edit ? bind(`버전.조건.${LK}.${i}.all.${j}.설명`, x.설명, 150) : `<b>${esc(x.설명)}</b>`} ${citeChip(x.근거)}`).join(' <b>+</b> ')} ${edit ? `<a href="#" data-act="cond-del" data-v="${i}" style="color:var(--red)">삭제</a>` : ''}</li>`;
+      return `<li>${edit ? bind(`버전.조건.${LK}.${i}.설명`, c.설명, 230) : `<b>${esc(c.설명)}</b>`} <span class="muted small">(${esc(c.필드)})</span> ${citeChip(c.근거)} ${edit ? `<a href="#" data-act="cond-del" data-v="${i}" style="color:var(--red)">삭제</a>` : ''}</li>`;
     }).join('');
-    const used = v.조건.any.flatMap(c => c.all ? c.all.map(x => x.필드) : [c.필드]);
+    const used = LIST.flatMap(c => c.all ? c.all.map(x => x.필드) : [c.필드]);
     const addC = edit ? `<div class="row" style="margin-top:6px"><select id="kxNewField"><option value="">+ 조건 추가</option>${Object.entries(FIELD_NAME).filter(([k]) => !used.includes(k)).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>${citeSelect('kxNewFieldCite')}<button class="btn ghost sm" data-act="cond-add">추가</button></div>` : '';
     const d = v.결과.기한;
-    return `<div class="kxrule"><div class="kxif">IF</div><div><b>다음 중 하나라도 해당하면</b><ol style="margin:6px 0;padding-left:20px;line-height:2">${conds}</ol>${addC}</div></div>
+    const dueH = !d ? '-' : d.일수 != null && !d.년 && !d.개월
+      ? `${esc(FIELD_NAME[d.기준필드] || d.기준필드.replace(/_/g, ' '))} ${edit ? `<button class="btn ghost sm" data-act="days" data-v="-10">−10</button> <input type="number" data-bind="버전.결과.기한.일수" data-num="1" value="${d.일수}" style="width:70px"> <button class="btn ghost sm" data-act="days" data-v="10">+10</button> 일 → <b id="kxDaysTxt">${daysTxt(d.일수)}</b>` : `<b style="color:var(--red);font-size:15px">${daysTxt(d.일수)}</b>`}`
+      : `${esc(d.기준필드.replace(/_/g, ' '))} <b style="color:var(--red);font-size:15px">${d.년 ? `+${d.년}년 ` : ''}${d.개월 ? `+${d.개월}개월 ` : ''}${d.일수 ? daysTxt(d.일수) : ''}</b> 이내`;
+    return `<div class="kxrule"><div class="kxif">IF</div><div><b>${LK === 'any' ? '다음 중 하나라도 해당하면' : '다음을 모두 충족하면'}</b><ol style="margin:6px 0;padding-left:20px;line-height:2">${conds}</ol>${addC}</div></div>
       <div class="kxrule"><div class="kxif then">THEN</div><div class="kv" style="grid-template-columns:90px 1fr;margin:0">
         <b>조치</b><span>${bind('버전.결과.조치', v.결과.조치, 300)}</span><b>제출처</b><span>${bind('버전.결과.제출처', v.결과.제출처, 200)}</span><b>서식</b><span>${bind('버전.결과.서식', v.결과.서식, 200)}</span>
-        <b>제출 기한</b><span>변경완료 예정일 ${edit ? `<button class="btn ghost sm" data-act="days" data-v="-10">−10</button> <input type="number" data-bind="버전.결과.기한.일수" data-num="1" value="${d.일수}" style="width:70px"> <button class="btn ghost sm" data-act="days" data-v="10">+10</button> 일 → <b id="kxDaysTxt">${daysTxt(d.일수)}</b>` : `<b style="color:var(--red);font-size:15px">${daysTxt(d.일수)}</b>`} ${citeChip(d.근거)}</span></div></div>`;
+        <b>제출 기한</b><span>${dueH} ${d ? citeChip(d.근거) : ''}</span></div></div>`;
   }
   if (r.유형 === '결정표') {
     const rows = v.결정표.map((t, i) => `<tr><td>${edit ? `<select data-bind="버전.결정표.${i}.사업장군">${['1군', '2군', '기타'].map(x => `<option ${x === t.사업장군 ? 'selected' : ''}>${x}</option>`).join('')}</select>` : t.사업장군}</td>
@@ -676,6 +685,18 @@ function ruleBody(r, v, edit) {
     const x = v.연장;
     return `<b>사업장 군 · 시설 위험도 → 정기검사 주기</b><table style="margin:6px 0 4px;max-width:520px"><tr><th>사업장 군</th><th>위험도</th><th>주기</th>${edit ? '<th></th>' : ''}</tr>${rows}</table>${edit ? '<button class="btn ghost sm" data-act="row-add">+ 행 추가</button>' : ''}
       <div class="kxrule" style="margin-top:10px"><div class="kxif">연장</div><div>최근 ${edit ? `<input type="number" data-bind="버전.연장.조건.연속적합_횟수_이상" data-num="1" value="${x.조건.연속적합_횟수_이상}" style="width:50px">` : `<b>${x.조건.연속적합_횟수_이상}</b>`}회 연속 적합 · 검사기관 ${edit ? `<input type="number" data-bind="버전.연장.조건.검사기관수_이상" data-num="1" value="${x.조건.검사기관수_이상}" style="width:50px">` : `<b>${x.조건.검사기관수_이상}</b>`}곳 이상 → 최대 ${edit ? `<input type="number" data-bind="버전.연장.최대_년" data-num="1" value="${x.최대_년}" style="width:50px">` : `<b>${x.최대_년}</b>`}년 연장 ${citeChip(x.근거)}</div></div>`;
+  }
+  if (r.유형 === '수량판정') {
+    const o = v.옵션;
+    return `<div class="kxrule"><div class="kxif">1</div><div>사고대비물질이면 <b>별표 3</b>, 아니면 <b>별표 2</b> 규정수량 적용 ${edit ? `<select data-bind="버전.옵션.사고대비우선"><option value="true">(사고대비 우선 적용)</option></select>` : ''}</div></div>
+      <div class="kxrule"><div class="kxif">2</div><div>함량이 <b>함량기준(% 이상)</b>에 미달하면 대상 아님</div></div>
+      <div class="kxrule"><div class="kxif">3</div><div>성상이 <b>액체</b>이면 용액(*) 값, 액체·고체이며 <b>저확산</b> 표시가 있으면 저확산 값 적용 ${edit ? `<label class="small"><input type="checkbox" data-bind="버전.옵션.저확산적용" ${o.저확산적용 ? 'checked' : ''} disabled> 저확산 적용</label>` : ''}</div></div>
+      <div class="kxrule"><div class="kxif">4</div><div>급성·만성·생태 등 복수 구분 해당 시 ${edit ? `<select data-bind="버전.옵션.복수구분">${['최소값', '첫 번째'].map(x => `<option ${x === o.복수구분 ? 'selected' : ''}>${x}</option>`).join('')}</select>` : `<b>${esc(o.복수구분 === '최소값' ? '가장 낮은 규정수량' : o.복수구분)}</b>`} 적용</div></div>
+      <div class="kxrule"><div class="kxif then">THEN</div><div>최대보유량을 비교해 구간 판정: ${v.구간.map(g => `<span class="pill navy">${g.이름}</span>`).join(' ')} <span class="muted small">(기준표: 별표2 ${K.규정수량표.별표2.length}행 · 별표3 ${K.규정수량표.별표3.length}행 — <a href="#" data-node="QTY">규정수량 표 보기</a>)</span></div></div>`;
+  }
+  if (r.유형 === '사업장판정') {
+    return `<table style="max-width:640px"><tr><th>순서</th><th>물질 구간(하나라도)</th><th>추가 조건</th><th>판정</th></tr>${v.결정.map((d, i) => `<tr><td>${i + 1}</td><td><span class="pill navy">${esc(d.구간)}</span></td><td>${d.조건 ? esc(d.조건.replace(/_/g, ' ')) : '-'}</td><td><b>${esc(d.결과)}</b><div class="muted small">${esc(d.설명 || '')}</div></td></tr>`).join('')}<tr><td>-</td><td colspan="2">그 외</td><td><b>${esc(v.기본)}</b></td></tr></table>
+      <p class="muted small">물질별 구간은 <a href="#" data-node="R-QTY-1">R-QTY-1</a> 결과를 사용합니다.</p>`;
   }
   if (r.유형 === '체크리스트') {
     return `<b>필수 항목 ${v.필수항목.length}개</b> <span class="muted small">(라벨 생성 · 현장 사진 판독 · 표시 점검에서 함께 사용)</span>
@@ -989,13 +1010,14 @@ function renderDash() {
 $('dashCards').onclick = e => { const c = e.target.closest('[data-n]'); if (!c) return; goNotice(c.dataset.n, 't3'); if (!S.notices[c.dataset.n]) runAnalysis(); };
 
 // ================================================================ ⑥ 지식 기반·판정
-const citeHtml = list => list.map(c => `<div class="cite"><b>${esc(c.조문)}</b> <span class="muted">(${esc(c.법령)}, 시행 ${esc(c.시행일)})</span><br>${esc(c.내용)}</div>`).join('');
+const citeHtml = list => list.map(c => `<div class="cite"><b>${esc(c.조문)}</b> <span class="muted">(${esc(c.법령)}, 시행 ${esc(c.시행일)})</span>${c.id ? srcBtn(c.id) : ''}<br>${esc(c.내용)}</div>`).join('');
 const CHANGE = [['취급량_증가', '취급량 증가'], ['취급시설_용량_증가', '취급시설 용량 증가'], ['신규_취급시설', '새로운 취급시설 설치'], ['물질_변경_추가', '유해화학물질 변경·추가'],
-  ['함량_농도_성상_변경', '함량·농도·성상 변경'], ['위험도_증가', '위 변경으로 위험 증가'], ['시설_위치_변경', '사업장 내 취급시설 위치 변경']];
+  ['함량_농도_성상_변경', '함량·농도·성상 변경'], ['위험도_증가', '위 변경으로 위험 증가'], ['시설_위치_변경', '사업장 내 취급시설 위치 변경'],
+  ['신규_취급시설_설치', '[고시] 취급시설 신규 설치·운영'], ['신규_유해화학물질_취급', '[고시] 규정수량 이상 신규 취급'], ['규정수량_이상_증가', '[고시] 최대보유량이 규정수량 이상으로 증가'], ['작성수준_2군에서_1군', '[고시] 작성수준 2군 → 1군']];
 $('facility').innerHTML = SITES.map(x => `<optgroup label="${esc(x.사업장)}">${x.시설.map(f => `<option>${esc(x.약칭)} · ${esc(f.이름)}</option>`).join('')}</optgroup>`).join('');
 $('changeChecks').innerHTML = CHANGE.map(([k, t]) => `<label class="chk"><input type="checkbox" data-k="${k}"> ${t}</label>`).join('');
 function runJudge() {
-  const input = { 변경완료_예정일: $('doneDate').value };
+  const input = { 변경완료_예정일: $('doneDate').value, 검사_개시일: $('inspStart').value };
   document.querySelectorAll('#changeChecks input').forEach(c => { if (c.checked) input[c.dataset.k] = true; });
   const res = judgeChange(K, input, base());
   $('judgeHint').textContent = `기준일 ${base()} 시행 규칙으로 판정 · 대상: ${$('facility').value}`;
@@ -1005,12 +1027,25 @@ function runJudge() {
     return `<div class="result hit"><h3><span class="pill red">대상</span> ${esc(r.조치)}</h3>
       <div class="kv"><b>제출 기한</b><span><b style="color:var(--red)">${esc(r.기한)}</b> ${d !== null ? `(${dday(r.기한)})` : ''} · ${esc(r.기한설명)}</span>
       <b>제출처</b><span>${esc(r.제출처)}</span><b>서식</b><span>${esc(r.서식)}</span><b>해당 사유</b><span>${r.사유.map(m => esc(m.설명)).join(', ')}</span>
-      <b>적용 규칙</b><span><span class="pill navy">${esc(r.규칙)} v${r.버전}</span> 시행 ${esc(r.시행일)}</span></div>
+      <b>적용 규칙</b><span><span class="pill navy">${esc(r.규칙)} v${r.버전}</span> ${ruleBadge(r.규칙)} 시행 ${esc(r.시행일)}</span></div>
       <details><summary>근거 조문 원문 보기</summary>${citeHtml(r.근거)}</details>
       ${intOf(r.규칙).length ? `<details open><summary>관련 해석·판단 ${intOf(r.규칙).length}건</summary>${intCards(intOf(r.규칙))}</details>` : ''}</div>`;
   }).join('');
 }
 $('judgeBtn').onclick = runJudge;
+$('qjList').innerHTML = [...K.규정수량표.별표3.map(r => [r.CAS[0], r.물질명]), ...K.규정수량표.별표2.slice(0, 2400).map(r => [r.CAS[0], r.물질명])].filter(x => x[0]).map(([c, n]) => `<option value="${c}">${esc(n.slice(0, 60))}</option>`).join('');
+$('qjBtn').onclick = () => {
+  let q = $('qjQ').value.trim();
+  if (!/^\d+-\d+-\d$/.test(q)) { const hit = [...K.규정수량표.별표3, ...K.규정수량표.별표2].find(r => r.물질명.includes(q) && r.CAS.length); if (hit) q = hit.CAS[0]; }
+  const r = qtyJudge(K, { CAS: q, 함량: +$('qjPct').value, 보유량: +$('qjQty').value, 성상: $('qjState').value }, base());
+  $('qjOut').innerHTML = !r.해당 ? `<div class="result"><h3><span class="pill gray">대상 아님</span> ${esc(q)}</h3><p class="muted">${esc(r.사유)}</p>${ruleBadge(r.규칙)}</div>` :
+    `<div class="result hit"><h3><span class="pill ${r.구간 === '상위 이상' ? 'red' : r.구간 === '하위 이상' ? 'orange' : 'navy'}">${r.구간}</span> ${esc(r.물질명)} <span class="muted small">CAS ${esc(q)}</span></h3>
+      <div class="kv"><b>적용 기준</b><span>${r.표 === '별표3' ? '별표 3 (사고대비물질)' : `별표 2 (${esc(r.구분)})`} · 함량기준 ${r.함량기준 ?? '-'}% 이상</span>
+      <b>규정수량</b><span>최하위 ${r.최하위 ?? '-'} t · 하위 <b>${r.하위 ?? '-'}</b> t · 상위 <b>${r.상위 ?? '-'}</b> t</span><b>최대보유량</b><span>${r.보유량} t (하위 대비 ${r.배수_하위 ?? '-'}배, 상위 대비 ${r.배수_상위 ?? '-'}배)</span>
+      <b>판정 근거</b><span>${r.메모.map(esc).join('<br>') || '-'}</span><b>적용 규칙</b><span><span class="pill navy">${r.규칙} v${r.버전}</span> ${ruleBadge(r.규칙)}</span></div>
+      <p class="small">→ ${r.구간 === '상위 이상' ? '1군 사업장 해당 가능 (주요취급시설 운영 시) — 화학사고예방관리계획서 1군 작성수준' : r.구간 === '하위 이상' ? '2군 사업장 해당 — 화학사고예방관리계획서 2군 작성수준' : '계획서 작성수준(1·2군) 기준 미만'}</p>
+      <details><summary>근거 조문 원문</summary>${citeHtml(r.근거)}</details></div>`;
+};
 function renderLabelChecks() {
   const v = activeVersion(K.규칙.find(r => r.유형 === '체크리스트'), base());
   $('labelChecks').innerHTML = `<p class="muted" style="margin:0 0 4px">규칙 R-16-1 v${v.버전} (시행 ${v.시행일})</p>` + v.필수항목.map(t => `<label class="chk"><input type="checkbox" checked data-v="${esc(t)}"> ${esc(t)}</label>`).join('');
@@ -1031,6 +1066,8 @@ function runGolden(Kx) {
     let act;
     if (c.유형 === '변경판정') { const r = judgeChange(Kx, c.입력, c.기준일); act = { 규칙: r.map(x => x.규칙), 기한: r[0]?.기한 }; }
     else if (c.유형 === '정기검사') act = inspectionSchedule(Kx, { ...SITE0, 시설: SITE0.시설.filter(f => f.id === c.입력.시설) }, c.기준일)[0];
+    else if (c.유형 === '수량판정') act = qtyJudge(Kx, c.입력, c.기준일);
+    else if (c.유형 === '사업장판정') act = siteGroup(Kx, SITE0, c.기준일);
     else act = checkLabel(Kx, c.입력.항목, c.기준일);
     return { c, act, ok: Object.entries(c.기대).every(([k, v]) => JSON.stringify(v) === JSON.stringify(act[k])) };
   });
@@ -1043,7 +1080,7 @@ function renderKnowledge() {
     ${r.버전.map(v => { const act = activeVersion(r, base()) === v; return `<tr><td>v${v.버전}</td><td>${v.시행일}</td><td>${v.폐지일 || '-'}</td><td>${act ? '<span class="pill green">기준일 시행 중</span>' : v.시행일 > base() ? '<span class="pill orange">시행 예정</span>' : '<span class="pill gray">이력</span>'}</td><td class="small">${esc(v.승인)}</td><td class="small">${v.근거.join(', ')}</td>
       <td class="small">${v.결과?.기한 ? `기한 ${v.결과.기한.일수}일` : v.결정표 ? `결정표 ${v.결정표.map(t => t.주기_년).join('/')}년 · 연장 ${v.연장?.최대_년}년` : v.필수항목 ? `필수 ${v.필수항목.length}항목` : ''}</td></tr>`; }).join('')}</table></div></div>`).join('');
   $('qtyTable').innerHTML = `<tr><th>물질</th><th>CAS</th><th>취급 사업장</th><th class="num">하위 (기본)</th><th>개정 이력</th><th class="num">기준일 적용 값</th></tr>` +
-    ALLCHEM.map(m => `<tr><td>${esc(m.이름)}</td><td>${m.CAS}</td><td>${m.사업장들.map(sitePill).join('')}</td><td class="num">${m.규정수량_하위_t} t</td><td class="small">${(K.수량[m.CAS] || []).map(x => `${x.시행일}부터 ${x.하위} t (${esc(x.승인)} 승인)`).join('<br>') || '-'}</td><td class="num"><b>${qtyAt(m, base()).하위} t</b></td></tr>`).join('');
+    ALLCHEM.map(m => `<tr><td>${esc(m.이름)}</td><td>${m.CAS}</td><td>${m.사업장들.map(sitePill).join('')}</td><td class="num">${qtyAt(m, base()).행?.하위 ?? '-'} t</td><td class="small">${(K.수량[m.CAS] || []).map(x => `${x.시행일}부터 ${x.하위} t (${esc(x.승인)} 승인)`).join('<br>') || '-'}</td><td class="num"><b>${qtyAt(m, base()).하위} t</b></td></tr>`).join('');
   const arts = Object.values(K.조문).flat();
   $('lawTable').innerHTML = `<tr><th>ID</th><th>조문</th><th>제목</th><th>시행일</th><th>폐지일</th><th>해시</th><th>내용</th></tr>` +
     arts.map(a => `<tr><td>${a.id}</td><td>${esc(label(a))}</td><td>${esc(a.제목)}</td><td>${a.시행일}</td><td>${a.폐지일 || '-'}</td><td><code>${a.해시}</code></td><td class="small">${esc(a.내용)}</td></tr>`).join('');
@@ -1053,6 +1090,162 @@ function renderKnowledge() {
   $('testTable').innerHTML = `<tr><th>사례</th><th>유형</th><th>기준일</th><th>내용</th><th>결과</th></tr>` +
     results.map(({ c, ok }) => `<tr><td>${c.id}</td><td>${c.유형}</td><td>${c.기준일}</td><td>${esc(c.설명)}</td><td><span class="pill ${ok ? 'green' : 'red'}">${ok ? '통과' : '실패'}</span></td></tr>`).join('');
 }
+
+// ================================================================ 원문 보기 (관련 페이지)
+let PAGES = null;
+try { PAGES = await (await fetch('sources/pages.json', { cache: 'no-store' })).json(); } catch (e) { PAGES = {}; }
+const SRCKEY = id => id.startsWith('PLAN') ? 'PLAN' : id.startsWith('QTY') ? 'QTY' : id.startsWith('ACT') ? 'ACT' : id.startsWith('RULE') ? 'RULE' : null;
+const srcBtn = id => SRCKEY(id) ? `<button class="btn ghost sm srcbtn" data-src="${esc(id)}">📄 원문 페이지</button>` : '';
+const LAWLINK = { PLAN: B.원문?.PLAN?.링크, QTY: B.원문?.QTY?.링크, ACT: 'https://www.law.go.kr/법령/화학물질관리법', RULE: 'https://www.law.go.kr/법령/화학물질관리법시행규칙' };
+function openSource(id, extra) {
+  const k = SRCKEY(id); const a = (K.조문[id] || [])[0];
+  $('srcLink').href = LAWLINK[k] || 'https://www.law.go.kr';
+  $('srcNav').innerHTML = '';
+  if (k === 'PLAN' && PAGES.PLAN && PAGES.PLAN.표시[id]) {
+    const P = PAGES.PLAN, hl = P.표시[id], pages = [...new Set(hl.map(h => h.page))];
+    const show = [...new Set([...pages, pages[pages.length - 1] + 1])].filter(n => n <= P.페이지수);
+    $('srcTitle').textContent = `${B.원문.PLAN.이름} — ${a ? label(a) : id}`;
+    $('srcSub').textContent = `${B.원문.PLAN.공포번호} · 시행 ${B.원문.PLAN.시행일} · 원본 PDF ${pages.map(n => n + '쪽').join(', ')} (노란 부분이 규칙의 근거)`;
+    $('srcBody').innerHTML = show.map(n => `<div class="pg" id="pg-${n}"><img src="${P.경로.replace('{n}', String(n).padStart(2, '0'))}" alt="${n}쪽"><span class="pno">${n} / ${P.페이지수}쪽</span>${hl.filter(h => h.page === n).map(h => `<div class="hl" style="left:${h.x * 100 - 0.8}%;top:${h.y * 100 - 0.4}%;width:${h.w * 100 + 1.6}%;height:${h.h * 100 + 0.8}%"></div>`).join('')}</div>`).join('');
+    $('srcNav').innerHTML = Array.from({ length: P.페이지수 }, (_, i) => i + 1).map(n => `<a href="#" data-pg="${n}" class="small" style="margin:0 2px;${pages.includes(n) ? 'font-weight:800;color:var(--red)' : ''}">${n}</a>`).join('') + ' ';
+    $('srcModal').classList.remove('hidden');
+    setTimeout(() => { const t = $('srcBody').querySelector('.hl'); if (t) t.scrollIntoView({ block: 'center' }); }, 120);
+    return;
+  }
+  if ((k === 'QTY' || k === 'PLAN') && B.원문?.[k]) {
+    const S0 = B.원문[k], art = a && a.조 ? `제${a.조}조` : null;
+    $('srcTitle').textContent = `${S0.이름} — ${a ? label(a) : id}`;
+    $('srcSub').textContent = `${S0.공포번호} · 시행 ${S0.시행일} · 고시 원문(HWPX)에서 추출한 본문 — 노란 부분이 규칙의 근거`;
+    let body = `<div class="doc"><h4>${esc(S0.이름)}</h4><p class="muted small" style="text-align:center">${esc(S0.머리.slice(1, 3).join(' '))}</p>` +
+      S0.조문.map((x, i) => `<div class="art ${art && x.번호 === art && !S0.조문.slice(0, i).some(y => y.번호 === art) ? 'on' : ''}">${esc(x.본문.join('\n'))}</div>`).join('') + '</div>';
+    if (id.startsWith('QTY-B')) {
+      const T = K.규정수량표, b3 = id.includes('B3');
+      body = `<div class="doc"><h4>${esc(S0.이름)}</h4><p style="text-align:center"><b>${b3 ? '[별표 3] 사고대비물질별 규정수량' : '[별표 2] 인체급성유해성, 인체만성유해성, 생태유해성 물질별 규정수량'}</b></p>
+        <div class="art on">${esc((T.일반기준[b3 ? '별표3' : '별표2'] || []).join('\n'))}</div>${extra || ''}<p class="muted small">전체 표: 별표 2 ${T.별표2.length}행 · 별표 3 ${T.별표3.length}행 (⑥ 지식 기반·판정의 물질 규정수량 판정기에서 검색)</p></div>`;
+    }
+    $('srcBody').innerHTML = body;
+    $('srcModal').classList.remove('hidden');
+    setTimeout(() => { const t = $('srcBody').querySelector('.art.on'); if (t) t.scrollIntoView({ block: 'center' }); }, 120);
+    return;
+  }
+  $('srcTitle').textContent = a ? `${a.법령명} ${label(a)}` : id;
+  $('srcSub').textContent = '시연 데이터는 법령 조문 요약본입니다. 원문은 국가법령정보센터에서 확인하세요 (법제처 Open API 연결 시 원문으로 대체).';
+  $('srcBody').innerHTML = `<div class="doc"><div class="art on">${esc(a ? a.내용 : '(조문 없음)')}</div></div>`;
+  $('srcModal').classList.remove('hidden');
+}
+// 별표 해당 행 (규정수량 판정 사례용)
+function qtyRowsHtml(cas, pickRow) {
+  const T = K.규정수량표;
+  const r3 = T.별표3.filter(r => r.CAS.includes(cas)), r2 = T.별표2.filter(r => r.CAS.includes(cas));
+  const row3 = r => `<tr class="${pickRow === r ? 'hlr' : ''}"><td>[별표3] ${r.번호}</td><td>${esc(r.물질명)}</td><td>${r.CAS.join(', ')}</td><td>-</td><td>${r.함량 ?? '-'}</td><td>${r.최하위 ?? '-'}${r.액체적용 ? '*' : ''}</td><td>${r.하위 ?? '-'}${r.액체적용 ? '*' : ''}</td><td>${r.상위 ?? '-'}${r.액체적용 ? '*' : ''}</td></tr>`;
+  const row2 = r => `<tr class="${pickRow === r ? 'hlr' : ''}"><td>[별표2] ${r.연번}</td><td>${esc(r.물질명.slice(0, 40))}</td><td>${r.CAS.join(', ')}</td><td>${esc(r.구분)}</td><td>${r.함량 ?? '-'}</td><td>${r.최하위 ?? '-'}</td><td>${r.하위 ?? '-'}</td><td>${r.상위 ?? '-'}</td></tr>`;
+  return `<table style="margin:8px 0"><tr><th>연번</th><th>화학물질명</th><th>CAS</th><th>구분</th><th>함량기준(%)</th><th>최하위(톤)</th><th>하위(톤)</th><th>상위(톤)</th></tr>${r3.map(row3).join('')}${r2.map(row2).join('')}</table>`;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-src]'); if (b) { e.preventDefault(); e.stopPropagation(); openSource(b.dataset.src, b.dataset.extra ? decodeURIComponent(b.dataset.extra) : ''); return; }
+  const pg = e.target.closest('[data-pg]'); if (pg) {
+    e.preventDefault(); const n = +pg.dataset.pg, P = PAGES.PLAN; let el = $(`pg-${n}`);
+    if (!el) { $('srcBody').insertAdjacentHTML('beforeend', `<div class="pg" id="pg-${n}"><img src="${P.경로.replace('{n}', String(n).padStart(2, '0'))}"><span class="pno">${n} / ${P.페이지수}쪽</span></div>`); el = $(`pg-${n}`); }
+    el.scrollIntoView({ block: 'start' });
+  }
+}, true);
+$('srcClose').onclick = () => $('srcModal').classList.add('hidden');
+$('srcModal').onclick = e => { if (e.target.id === 'srcModal') $('srcModal').classList.add('hidden'); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('srcModal').classList.add('hidden'); });
+
+// ================================================================ ⑦ 규칙 검토·확정
+const RV_ST = { 'AI 초안': 'gray', '검토 중': 'orange', '수정 요청': 'red', '확정': 'green', '반려': 'red' };
+let RV = { sel: null, filter: '' };
+function rvOf(r) {
+  S.review ||= {};
+  const base0 = latest(r).검토 || {};
+  return S.review[r.id] || { 상태: base0.상태 === '확정' ? '확정' : (r.id.startsWith('R-NEW') ? '검토 중' : 'AI 초안'), 체크: {}, 이력: [], 의견: '' };
+}
+function rvCases(r) {
+  const v = latest(r), cs = (v.검토 && v.검토.사례) || [];
+  return cs.map(c => {
+    let act;
+    const d = c.입력.기준일 || '2026-12-20';
+    if (r.유형 === '수량판정') act = qtyJudge(K, c.입력, d);
+    else if (r.유형 === '사업장판정') act = siteGroup(K, SITES.find(x => x.id === c.입력.사업장) || SITES[0], d);
+    else if (r.유형 === '조건판정') { const res = judgeChange(K, c.입력, base()).find(x => x.규칙 === r.id); act = res ? { 기한: res.기한, 대상: true } : { 대상: false }; }
+    else act = {};
+    const ok = Object.entries(c.기대).every(([k, v]) => String(v) === String(act[k]));
+    return { c, act, ok };
+  });
+}
+function renderReview() {
+  const all = K.규칙.map(r => ({ r, rv: rvOf(r) }));
+  const cnt = s0 => all.filter(x => x.rv.상태 === s0).length;
+  const done = cnt('확정');
+  $('rvKpi').innerHTML = [[all.length + '개', '전체 규칙'], [done + '개', '확정'], [cnt('AI 초안') + '개', 'AI 초안 (검토 전)', cnt('AI 초안') > 0], [cnt('검토 중') + '개', '검토 중'], [cnt('수정 요청') + '개', '수정 요청', cnt('수정 요청') > 0],
+    [Math.round(done / all.length * 100) + '%', '확정률']].map(([v, l, a]) => `<div class="kpi ${a ? 'alert' : ''}"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+  const pend = all.length - done; $('rvDot').textContent = pend; $('rvDot').classList.toggle('hidden', !pend);
+  const list = all.filter(x => !RV.filter || x.rv.상태 === RV.filter);
+  const groups = {};
+  list.forEach(x => (groups[x.r.출처고시 ? x.r.출처고시.split('(')[0].split(' 제')[0].trim() : '화학물질관리법·시행규칙 (기존 규칙)'] ||= []).push(x));
+  $('rvList').innerHTML = Object.entries(groups).map(([g, xs]) => `<div class="kxh">${esc(g)}</div>` + xs.map(({ r, rv }) =>
+    `<div class="kxi ${RV.sel === r.id ? 'on' : ''}" data-rv="${r.id}"><i style="background:${TYPE_COLOR.규칙}"></i><div style="flex:1"><div class="row between"><b>${esc(r.id)}</b><span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></div><div class="small">${esc(r.이름)}</div><div class="muted small">${esc(r.유형)} · v${latest(r).버전}</div></div></div>`).join('')).join('') || '<p class="muted">해당 상태의 규칙이 없습니다.</p>';
+  if (!RV.sel || !K.규칙.some(r => r.id === RV.sel)) RV.sel = (list.find(x => x.rv.상태 !== '확정') || list[0] || all[0]).r.id;
+  renderRvDetail();
+}
+function renderRvDetail() {
+  const r = K.규칙.find(x => x.id === RV.sel), v = latest(r), rv = rvOf(r), M = v.검토 || {};
+  const issues = M.쟁점 || [], cases = rvCases(r);
+  const allChecked = issues.every((_, i) => rv.체크?.[i]);
+  const locked = rv.상태 === '확정';
+  $('rvDetail').innerHTML = `
+    <div class="result" style="background:#fff">
+      <div class="row between"><h3 style="margin:0">${esc(r.id)} ${esc(r.이름)} <span class="pill gray">${esc(r.유형)}</span> <span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></h3>
+        <div class="row"><button class="btn ghost sm" data-rvgo="${r.id}">④에서 수정·편집 ↗</button></div></div>
+      <p class="muted" style="margin:6px 0">${esc(r.설명)}</p>
+      <div class="kv"><b>출처 고시</b><span>${esc(r.출처고시 || '화학물질관리법·시행규칙 (발췌)')}</span><b>작성</b><span>${esc(M.작성 || '-')} · ${esc(M.작성일 || '')} · v${v.버전} (시행 ${v.시행일})</span><b>AI 요약</b><span>${esc(M.요약 || '-')}</span></div>
+    </div>
+    <div class="result" style="background:#fff"><h3>규칙 내용</h3>${ruleBody(r, v, false)}</div>
+    <div class="result" style="background:#fff"><h3>근거 원문 (고시·법령) <span class="muted small">— 📄 원문 페이지를 누르면 원본 문서의 해당 쪽을 표시</span></h3>${citeHtml(cite0(v.근거))}</div>
+    <div class="result ${issues.length && !allChecked ? 'hit' : ''}" style="${issues.length && !allChecked ? '' : 'background:#fff'}"><h3>쟁점·확인 필요 사항 ${issues.length ? `<span class="muted small">(${issues.filter((_, i) => rv.체크?.[i]).length}/${issues.length} 확인)</span>` : ''}</h3>
+      ${issues.length ? issues.map((t, i) => `<label class="chk" style="align-items:flex-start"><input type="checkbox" data-rvchk="${i}" ${rv.체크?.[i] ? 'checked' : ''} ${locked ? 'disabled' : ''}> <span>${esc(t)}</span></label>`).join('') : '<p class="muted small">AI가 표시한 쟁점이 없습니다.</p>'}
+      <p class="muted small" style="margin:6px 0 0">모든 쟁점을 확인해야 확정할 수 있습니다. 해석이 필요하면 ④ 지식 편집에서 <b>해석·판단</b>을 등록해 이 규칙에 연결하세요.</p></div>
+    <div class="result" style="background:#fff"><h3>검증 사례 (지금 엔진으로 실행)</h3>
+      ${cases.length ? `<table><tr><th>사례</th><th>입력</th><th>기대</th><th>실제</th><th>결과</th></tr>${cases.map(({ c, act, ok }) => `<tr><td class="small">${esc(c.설명)}</td><td class="small"><code>${esc(JSON.stringify(c.입력))}</code></td><td class="small">${esc(JSON.stringify(c.기대))}</td><td class="small">${esc(Object.keys(c.기대).map(k => `${k}: ${act[k] ?? '-'}`).join(', '))}</td><td><span class="pill ${ok ? 'green' : 'red'}">${ok ? '통과' : '불일치'}</span>${r.유형 === '수량판정' ? `<br><button class="btn ghost sm srcbtn" data-src="${act.표 === '별표3' ? 'QTY-B3-일반' : 'QTY-B2-일반'}" data-extra="${encodeURIComponent('<p><b>이 사례에 해당하는 원문 행</b> (노란 행이 적용된 값)</p>' + qtyRowsHtml(c.입력.CAS, act.행))}">📄 별표 원문 행</button>` : ''}</td></tr>`).join('')}</table>` : '<p class="muted small">등록된 검증 사례가 없습니다.</p>'}
+      ${intOf(r.id).length ? `<h3>연결된 해석·판단</h3>${intCards(intOf(r.id))}` : ''}</div>
+    <div class="result" style="background:#fff;border-color:var(--blue)"><h3>전문가 검토</h3>
+      ${locked ? `<p><span class="pill green">확정</span> ${esc(rv.검토자 || '')} · ${esc(rv.일시 || '')} ${rv.의견 ? `— ${esc(rv.의견)}` : ''}</p><button class="btn ghost sm" data-rvact="reopen">확정 취소 (재검토)</button>` : `
+      <div class="row" style="align-items:flex-end"><label class="field"><span>검토자</span><select id="rvWho">${personOpts(rv.검토자 || '박정민', 'HQ')}</select></label>
+        <label class="field" style="flex:1;min-width:240px"><span>검토 의견</span><input type="text" id="rvMemo" value="${esc(rv.의견 || '')}" placeholder="예: 고시 원문과 일치 확인, 복수 구분 최소값 적용 동의" style="width:100%"></label></div>
+      <div class="row"><button class="btn green" data-rvact="확정" ${allChecked && cases.every(x => x.ok) ? '' : 'disabled title="쟁점 확인과 검증 사례 통과가 필요합니다"'}>✔ 확정 저장</button>
+        <button class="btn ghost" data-rvact="검토 중">검토 중으로 표시</button><button class="btn orange" data-rvact="수정 요청">수정 요청</button><button class="btn ghost" data-rvact="반려" style="color:var(--red)">반려</button></div>`}
+      ${rv.이력?.length ? `<details style="margin-top:8px"><summary>검토 이력 ${rv.이력.length}건</summary>${rv.이력.map(h => `<div class="small">${esc(h.t)} · ${esc(h.who)} · <b>${esc(h.상태)}</b> ${esc(h.의견 || '')}</div>`).join('')}</details>` : ''}</div>`;
+}
+function cite0(ids) { return [...new Set(ids)].map(id => { const vs = K.조문[id] || []; const a = vs.find(x => !x.폐지일) || vs[vs.length - 1]; return a ? { id, 조문: label(a), 법령: a.법령명, 시행일: a.시행일, 내용: a.내용 } : { id, 조문: id, 법령: '', 시행일: '', 내용: '(조문 없음)' }; }); }
+$('rvList') && ($('rvList').onclick = e => { const x = e.target.closest('[data-rv]'); if (x) { RV.sel = x.dataset.rv; renderReview(); } });
+$('rvFilter') && ($('rvFilter').onchange = e => { RV.filter = e.target.value; RV.sel = null; renderReview(); });
+$('rvDetail') && ($('rvDetail').onchange = e => {
+  const c = e.target.dataset.rvchk; if (c === undefined) return;
+  const r = K.규칙.find(x => x.id === RV.sel), rv = rvOf(r);
+  rv.체크 = { ...rv.체크, [c]: e.target.checked }; if (rv.상태 === 'AI 초안') rv.상태 = '검토 중';
+  S.review[r.id] = rv; save(); renderReview();
+});
+$('rvDetail') && ($('rvDetail').onclick = e => {
+  const go = e.target.closest('[data-rvgo]'); if (go) { ED.sel = go.dataset.rvgo; ED.mode = 'view'; ED.draft = null; showTab('t4'); setTimeout(() => $('kx').scrollIntoView({ behavior: 'smooth' }), 100); return; }
+  const nd = e.target.closest('[data-node]'); if (nd) { e.preventDefault(); ED.sel = nd.dataset.node; showTab('t4'); setTimeout(() => $('kx').scrollIntoView({ behavior: 'smooth' }), 100); return; }
+  const a = e.target.closest('[data-rvact]'); if (!a) return;
+  const r = K.규칙.find(x => x.id === RV.sel), rv = rvOf(r), act = a.dataset.rvact;
+  if (act === 'reopen') { rv.상태 = '검토 중'; rv.이력 = [...(rv.이력 || []), { t: nowStr(), who: '김지훈', 상태: '확정 취소' }]; S.review[r.id] = rv; log(`규칙 ${r.id} 확정 취소 (재검토)`); save(); K = knowledge(); return renderReview(); }
+  const who = $('rvWho').value, memo = $('rvMemo').value.trim();
+  if (['수정 요청', '반려'].includes(act) && !memo) return toast('수정 요청·반려 사유를 검토 의견에 입력하세요');
+  Object.assign(rv, { 상태: act, 검토자: who, 의견: memo, 일시: nowStr() });
+  rv.이력 = [...(rv.이력 || []), { t: nowStr(), who, 상태: act, 의견: memo }];
+  S.review[r.id] = rv; log(`규칙 ${r.id} ${act}${memo ? ' — ' + memo : ''}`, who); save(); K = knowledge();
+  toast(act === '확정' ? `${r.id} 확정 저장 — 판정 결과에 '확정' 규칙으로 표시됩니다` : `${r.id} ${act}`);
+  renderReview();
+});
+$('rvExport') && ($('rvExport').onclick = () => {
+  const out = K.규칙.filter(r => rvOf(r).상태 === '확정').map(r => ({ ...r, 검토결과: rvOf(r) }));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({ 내보낸시각: nowStr(), 규칙: out }, null, 2)], { type: 'application/json' }));
+  a.download = `확정규칙_${base()}.json`; a.click(); toast(`확정 규칙 ${out.length}개를 내보냈습니다 (운영 시 PR로 저장소에 반영)`);
+});
+const ruleBadge = id => { const r = K.규칙.find(x => x.id === id); if (!r) return ''; const st = rvOf(r).상태; return st === '확정' ? '<span class="pill green">확정 규칙</span>' : `<span class="pill orange" title="전문가 확정 전 규칙">미확정 (${st})</span>`; };
 
 // ================================================================ ⑦ GitHub 흐름
 const gh = p => repo ? `https://github.com/${repo}${p}` : '#';
@@ -1077,6 +1270,8 @@ function render() {
   if (curTab === 't4') renderCmp();
   if (curTab === 't5') renderDash();
   if (curTab === 't6') renderKnowledge();
+  if (curTab === 't8') renderReview();
+  try { const pend = K.규칙.filter(r => rvOf(r).상태 !== '확정').length; $('rvDot').textContent = pend; $('rvDot').classList.toggle('hidden', !pend); } catch (e) {}
 }
 $('baseDate').onchange = render;
 $('siteSel').innerHTML = `<option value="ALL">전체 (${SITES.length}곳)</option>` + SITES.map(x => `<option value="${x.id}">${esc(x.사업장)}</option>`).join('');

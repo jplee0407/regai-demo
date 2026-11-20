@@ -1,4 +1,4 @@
-import { judgeChange, inspectionSchedule, checkLabel } from '../src/engine.js';
+import { judgeChange, inspectionSchedule, checkLabel, qtyJudge, siteGroup } from '../src/engine.js';
 
 // 정답셋 한 건을 실행하고 기대값과 비교
 export function runCase(bundle, c) {
@@ -10,6 +10,10 @@ export function runCase(bundle, c) {
     const site = { ...bundle.사업장, 시설: bundle.사업장.시설.filter(f => f.id === c.입력.시설) };
     const r = inspectionSchedule(bundle, site, c.기준일)[0];
     실제 = { 주기_년: r.주기_년, 기한: r.기한, 상태: r.상태 };
+  } else if (c.유형 === '수량판정') {
+    실제 = qtyJudge(bundle, c.입력, c.기준일);
+  } else if (c.유형 === '사업장판정') {
+    실제 = siteGroup(bundle, bundle.사업장, c.기준일);
   } else {
     const r = checkLabel(bundle, c.입력.항목, c.기준일);
     실제 = { 누락: r.누락 };
