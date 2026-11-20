@@ -16,7 +16,7 @@ export function loadBundle() {
   const 법령 = [];
   for (const f of LAW_FILES) {
     const law = readJson(f);
-    법령.push({ 법령명: law.법령명, 구분: law.구분, 공포번호: law.공포번호, 시행일: law.시행일, 출처: law.출처, 비고: law.비고 });
+    법령.push({ 법령명: law.법령명, 약칭: law.약칭, 구분: law.구분, 공포번호: law.공포번호, 공포일: law.공포일, 시행일: law.시행일, 출처: law.출처, 비고: law.비고 });
     for (const a of law.조문) {
       (조문[a.id] ||= []).push({ ...a, 법령명: law.법령명, 약칭: law.약칭, 해시: hash(a.내용) });
     }

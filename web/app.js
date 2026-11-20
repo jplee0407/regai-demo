@@ -1447,7 +1447,18 @@ $('oblCard') && ($('oblCard').onclick = e => {
 
 // ================================================================ ② 규칙 검토·확정
 const RV_ST = { 'AI 초안': 'gray', '검토 중': 'orange', '수정 요청': 'red', '확정': 'green', '반려': 'red' };
-let RV = { sel: null, filter: '', group: '의무' };
+let RV = { sel: null, filter: '', group: '의무', sort: '최신' };
+// 규칙의 출처 고시·법령 (공포번호·고시일·시행일)
+function ruleSrc(r) {
+  const L = B.법령 || [];
+  let law = r.출처고시 ? L.find(l => r.출처고시.startsWith(l.법령명)) : null;
+  if (!law) { const ids = latest(r).근거 || []; for (const id of ids) { const a = (K.조문[id] || [])[0]; if (a) { law = L.find(l => l.법령명 === a.법령명); if (law) break; } } }
+  if (!law) return { 법령명: r.id.startsWith('R-NEW') ? '전문가 직접 추가' : '기타', 약칭: '', 공포번호: '', 공포일: latest(r).시행일 || '', 시행일: latest(r).시행일 || '' };
+  return law;
+}
+const srcShort = l => l.약칭 || l.법령명.replace('화학물질관리법 시행규칙', '시행규칙').replace('화학물질관리법', '화관법');
+const srcNo = l => (l.공포번호 || '').replace(/^.*(제[\d-]+호)$/, '$1');
+const byDate = (da, db) => RV.sort === '오래된' ? (da || '').localeCompare(db || '') : (db || '').localeCompare(da || '');
 function rvOf(r) {
   S.review ||= {};
   const base0 = latest(r).검토 || {};
@@ -1540,13 +1551,15 @@ function renderReview() {
   if (pl.length) groups[PG] = [];
   if (RV.group === '의무') {
     (K.의무 || []).forEach(o => { const rs = all.filter(x => topOf(x.r.의무분류) === o.코드); if (o.상태 === '폐지' && !rs.length) return; if (RV.filter && !list.some(x => topOf(x.r.의무분류) === o.코드)) return; const k = `${o.코드} ${o.이름}`; groups[k] = []; ghead[k] = `<span style="color:${OBL_CLR}">${esc(k)}</span> <span class="small" style="float:right;color:${rs.length ? (rs.every(x => x.rv.상태 === '확정') ? 'var(--green)' : 'var(--orange)') : 'var(--red)'}">${rs.length ? `확정 ${rs.filter(x => x.rv.상태 === '확정').length} / 전체 ${rs.length}` : '규칙 없음'}</span>`; });
-    list.slice().sort((a0, b0) => (a0.r.의무분류 || 'Z').localeCompare(b0.r.의무분류 || 'Z', undefined, { numeric: true })).forEach(x => { const o = oblTop(x.r.의무분류); (groups[o ? `${o.코드} ${o.이름}` : '미분류'] ||= []).push(x); });
+    list.slice().sort((a0, b0) => RV.sort === '코드' ? (a0.r.의무분류 || 'Z').localeCompare(b0.r.의무분류 || 'Z', undefined, { numeric: true }) : byDate(ruleSrc(a0.r).공포일, ruleSrc(b0.r).공포일) || (a0.r.의무분류 || 'Z').localeCompare(b0.r.의무분류 || 'Z', undefined, { numeric: true })).forEach(x => { const o = oblTop(x.r.의무분류); (groups[o ? `${o.코드} ${o.이름}` : '미분류'] ||= []).push(x); });
   } else {
-    list.forEach(x => (groups[x.r.출처고시 ? x.r.출처고시.split('(')[0].split(' 제')[0].trim() : '화학물질관리법·시행규칙 (기존 규칙)'] ||= []).push(x));
-    Object.keys(groups).filter(k => k !== PG).forEach(k => { const rs = all.filter(x => groups[k].some(y => y.r.id === x.r.id)); ghead[k] = `${esc(k)} <span class="small" style="float:right">확정 ${rs.filter(x => x.rv.상태 === '확정').length} / 전체 ${rs.length}</span>`; });
+    const lawOf = {}; list.forEach(x => { const l = ruleSrc(x.r); lawOf[l.법령명] = l; });
+    Object.values(lawOf).sort((a0, b0) => RV.sort === '코드' ? a0.법령명.localeCompare(b0.법령명) : byDate(a0.공포일, b0.공포일)).forEach(l => { groups[l.법령명] = []; });
+    list.forEach(x => groups[ruleSrc(x.r).법령명].push(x));
+    Object.keys(groups).filter(k => k !== PG).forEach(k => { const l = lawOf[k], rs = groups[k]; ghead[k] = `<div>${esc(k)} <span class="small" style="float:right">확정 ${rs.filter(x => x.rv.상태 === '확정').length} / 전체 ${rs.length}</span></div><div class="small" style="font-weight:400;color:var(--sub)">${esc(l.공포번호 || '')}${l.공포일 ? ` · <b style="color:var(--navy)">${l.구분 === '고시' ? '고시' : '공포'} ${esc(l.공포일)}</b>` : ''}${l.시행일 ? ` · 시행 ${esc(l.시행일)}` : ''}</div>`; });
   }
-  $('rvList').innerHTML = Object.entries(groups).map(([g, xs]) => `<div class="kxh">${ghead[g] || esc(g)}</div>` + (g.startsWith('개정 반영') ? pl.map(x => `<div class="kxi ${RV.sel === x.key ? 'on' : ''}" data-rv="${x.key}"><i style="background:${TYPE_COLOR.고시}"></i><div style="flex:1"><div class="row between"><b>${esc(x.n.id)}</b>${propPill(x.n, x.i).replace(/AI 추천 · 개정 반영 대기 /, '대기 ')}</div><div class="small">${esc(x.p.항목)}</div><div class="muted small">${esc(x.p.규칙)} · ${esc(x.p.현행)} → ${esc(x.p.제안)}${ruleObl(x.p.규칙) ? ` · ${esc(ruleObl(x.p.규칙))} ${esc(oblOf(ruleObl(x.p.규칙))?.이름 || '')}` : ''}</div></div></div>`) : xs.map(({ r, rv }) =>
-    `<div class="kxi ${RV.sel === r.id ? 'on' : ''}" data-rv="${r.id}"><i style="background:${TYPE_COLOR.규칙}"></i><div style="flex:1"><div class="row between"><b>${esc(r.id)}</b><span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></div><div class="small">${esc(r.이름)}</div><div class="muted small">${esc(r.유형)} · v${latest(r).버전}${r.의무분류 ? ` · <b style="color:${OBL_CLR}">${esc(r.의무분류)}</b> ${esc(oblOf(r.의무분류)?.이름 || '')}` : ''}${RV.group === '고시' ? '' : ''}</div></div></div>`)).join('') + (RV.group === '의무' && g !== PG ? (t0 => { const t = oblTop(g.split(' ')[0]); if (!t) return ''; const miss = (t.세부 || []).filter(s0 => s0.상태 !== '폐지' && !rulesOf(s0.코드).length); return miss.length ? `<div class="muted small" style="padding:2px 10px 8px">규칙 없는 세부 업무 ${miss.length}개: ${miss.map(s0 => `<span title="${esc(s0.이름)} (${esc(s0.유형)})" style="${s0.유형 === '판정형' ? 'color:var(--red)' : ''}">${esc(s0.코드)}</span>`).join(' ')}</div>` : ''; })() : '')).join('') || '<p class="muted">해당 상태의 규칙이 없습니다.</p>';
+  $('rvList').innerHTML = Object.entries(groups).map(([g, xs]) => `<div class="kxh">${ghead[g] || esc(g)}</div>` + (g.startsWith('개정 반영') ? pl.slice().sort((a0, b0) => RV.sort === '코드' ? 0 : byDate(a0.n.공포일, b0.n.공포일)).map(x => `<div class="kxi ${RV.sel === x.key ? 'on' : ''}" data-rv="${x.key}"><i style="background:${TYPE_COLOR.고시}"></i><div style="flex:1"><div class="row between"><b>${esc(x.n.id)}</b>${propPill(x.n, x.i).replace(/AI 추천 · 개정 반영 대기 /, '대기 ')}</div><div class="small">${esc(x.p.항목)}</div><div class="small" style="color:var(--navy)">고시 <b>${esc(x.n.공포일)}</b> · 시행 ${esc(x.n.시행일)}</div><div class="muted small">${esc(x.p.규칙)} · ${esc(x.p.현행)} → ${esc(x.p.제안)}${ruleObl(x.p.규칙) ? ` · ${esc(ruleObl(x.p.규칙))} ${esc(oblOf(ruleObl(x.p.규칙))?.이름 || '')}` : ''}</div></div></div>`) : xs.map(({ r, rv }) =>
+    `<div class="kxi ${RV.sel === r.id ? 'on' : ''}" data-rv="${r.id}"><i style="background:${TYPE_COLOR.규칙}"></i><div style="flex:1"><div class="row between"><b>${esc(r.id)}</b><span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></div><div class="small">${esc(r.이름)}</div>${(l => `<div class="small" style="color:var(--navy)" title="${esc(l.법령명 + ' ' + (l.공포번호 || ''))}">${RV.group === '고시' ? '' : esc(srcShort(l)) + ' '}${esc(srcNo(l))}${l.공포일 ? ` · ${l.구분 === '고시' ? '고시' : '공포'} <b>${esc(l.공포일)}</b>` : ''}</div>`)(ruleSrc(r))}<div class="muted small">${esc(r.유형)} · v${latest(r).버전}${r.의무분류 ? ` · <b style="color:${OBL_CLR}">${esc(r.의무분류)}</b> ${esc(oblOf(r.의무분류)?.이름 || '')}` : ''}${RV.group === '고시' ? '' : ''}</div></div></div>`)).join('') + (RV.group === '의무' && g !== PG ? (t0 => { const t = oblTop(g.split(' ')[0]); if (!t) return ''; const miss = (t.세부 || []).filter(s0 => s0.상태 !== '폐지' && !rulesOf(s0.코드).length); return miss.length ? `<div class="muted small" style="padding:2px 10px 8px">규칙 없는 세부 업무 ${miss.length}개: ${miss.map(s0 => `<span title="${esc(s0.이름)} (${esc(s0.유형)})" style="${s0.유형 === '판정형' ? 'color:var(--red)' : ''}">${esc(s0.코드)}</span>`).join(' ')}</div>` : ''; })() : '')).join('') || '<p class="muted">해당 상태의 규칙이 없습니다.</p>';
   const isP = RV.sel && RV.sel.startsWith('P|');
   if (!RV.sel || (isP ? !PI.some(x => x.key === RV.sel) : !K.규칙.some(r => r.id === RV.sel))) { const p0 = pl.find(x => !x.st); RV.sel = p0 ? p0.key : (list.find(x => x.rv.상태 !== '확정') || list[0] || all[0]).r.id; }
   if (RV.sel.startsWith('P|')) renderPropDetail(RV.sel); else renderRvDetail();
@@ -1565,7 +1578,7 @@ function renderRvDetail() {
           <span class="small muted">연관 의무</span> ${(K.의무 || []).filter(o => o.상태 !== '폐지').map(o => `<label class="small" style="white-space:nowrap" title="${esc(o.이름)}"><input type="checkbox" data-rvrel="${o.코드}" ${(r.연관분류 || []).includes(o.코드) ? 'checked' : ''}>${esc(o.코드)}</label>`).join(' ')}
           <button class="btn ghost sm" data-rvact="obl">분류 저장</button></span>
         <b>미이행 시 벌칙</b><span>${r.의무분류 ? penHtml(oblOf(r.의무분류)) : '<span class="muted small">의무 분류를 지정하세요</span>'}</span>
-        <b>출처 고시</b><span>${esc(r.출처고시 || '화학물질관리법·시행규칙 (발췌)')}</span><b>작성</b><span>${esc(M.작성 || '-')} · ${esc(M.작성일 || '')} · v${v.버전} (시행 ${v.시행일})</span><b>AI 요약</b><span>${esc(M.요약 || '-')}</span></div>
+        <b>출처 고시</b><span>${(l => `${esc(l.법령명)} ${esc(l.공포번호 || '')} · <b>고시(공포) ${esc(l.공포일 || '-')}</b> · 시행 ${esc(l.시행일 || '-')}`)(ruleSrc(r))}</span><b>작성</b><span>${esc(M.작성 || '-')} · ${esc(M.작성일 || '')} · v${v.버전} (시행 ${v.시행일})</span><b>AI 요약</b><span>${esc(M.요약 || '-')}</span></div>
     </div>
     <div class="result" style="background:#fff"><h3>규칙 내용</h3>${ruleBody(r, v, false)}</div>
     <div class="result" style="background:#fff"><h3>근거 원문 (고시·법령) <span class="muted small">— 📄 원문 페이지를 누르면 원본 문서의 해당 쪽을 표시</span></h3>${citeHtml(cite0(v.근거))}</div>
@@ -1586,6 +1599,7 @@ function renderRvDetail() {
 function cite0(ids) { return [...new Set(ids)].map(id => { const vs = K.조문[id] || []; const a = vs.find(x => !x.폐지일) || vs[vs.length - 1]; return a ? { id, 조문: label(a), 법령: a.법령명, 시행일: a.시행일, 내용: a.내용 } : { id, 조문: id, 법령: '', 시행일: '', 내용: '(조문 없음)' }; }); }
 $('rvList') && ($('rvList').onclick = e => { const x = e.target.closest('[data-rv]'); if (x) { RV.sel = x.dataset.rv; renderReview(); } });
 $('rvGroup') && ($('rvGroup').onchange = e => { RV.group = e.target.value; renderReview(); });
+$('rvSort') && ($('rvSort').onchange = e => { RV.sort = e.target.value; renderReview(); });
 $('rvFilter') && ($('rvFilter').onchange = e => { RV.filter = e.target.value; RV.sel = null; renderReview(); });
 $('rvDetail') && ($('rvDetail').onchange = e => {
   if (e.target.id === 'ppv' || e.target.id === 'ppd') { const [, nid, si] = RV.sel.split('|'), n = NOTICES.find(x => x.id === nid), p = n.규칙제안[+si];
