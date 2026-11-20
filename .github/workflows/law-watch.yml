@@ -1,0 +1,60 @@
+name: 법령 개정 감시
+on:
+  schedule:
+    - cron: '0 21 * * *'   # 매일 06:00 (한국시간)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'real = 법제처 실제 수집, simulate = 가상 개정 시연'
+        required: true
+        default: simulate
+        type: choice
+        options: [simulate, real]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: 수집·비교·영향 분석
+        env:
+          LAW_OC: ${{ secrets.LAW_OC }}
+        run: |
+          if [ "${{ github.event.inputs.mode }}" = "simulate" ]; then
+            npm run simulate
+          else
+            npm run watch-law
+          fi
+      - name: 정답셋 회귀 테스트 (갱신안 기준, 결과를 PR 본문에 첨부)
+        if: hashFiles('out/changed') != ''
+        run: |
+          npm test || true
+          printf '\n---\n' >> out/pr-body.md
+          cat out/test-report.md >> out/pr-body.md
+      - name: 변경 여부 확인
+        id: chk
+        run: |
+          if [ -f out/changed ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "title=$(cat out/pr-title.txt)" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 갱신안 PR 생성
+        if: steps.chk.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: law-update/${{ github.run_id }}
+          title: ${{ steps.chk.outputs.title }}
+          body-path: out/pr-body.md
+          commit-message: ${{ steps.chk.outputs.title }}
+          labels: 법령개정
+          add-paths: |
+            data/**
+            rules/**
+            tests/**
