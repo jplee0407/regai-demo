@@ -143,6 +143,12 @@
   tr.hlr td { background: rgba(255,214,0,.4) !important; font-weight: 700; }
   .srcbtn { font-size: 11.5px; margin-left: 6px; }
   .printonly { display: none; }
+  .cgt td, .cgt th { vertical-align: middle; }
+  .cgt input[type=number], .cgt input[type=text], .cgt select { width: 100%; }
+  .cgt td.cur { color: var(--sub); background: #F6F8FB !important; }
+  .cgt tr.chg td.after input, .cgt tr.chg td.after select { border-color: var(--orange); background: var(--lorange); font-weight: 700; }
+  .flag { display: flex; gap: 8px; padding: 6px 8px; border-radius: 6px; margin: 4px 0; background: var(--lorange); border: 1px solid #E6C08A; font-size: 13px; }
+  .flag.no { background: #F6F8FB; border-color: var(--line); color: var(--sub); }
   .nsum { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-top: 12px; background: #FAFBFD; font-size: 13px; }
   .nsum h4 { margin: 0 0 6px; color: var(--navy); font-size: 14px; }
   .nsum ul { margin: 4px 0 0; padding-left: 18px; } .nsum li { margin: 2px 0; }
@@ -245,18 +251,22 @@
 
   <!-- ⑥ 지식 기반·판정 -->
   <section id="t6" class="hidden">
-    <div class="grid2">
-      <div class="card">
-        <h2>판정 시험: 시설 변경</h2>
-        <p class="desc">변경 내용을 고르면 기준일에 시행 중인 규칙으로 계획서 변경 제출 대상과 기한을 판정합니다.</p>
-        <div class="field"><span>대상 시설</span><select id="facility"></select></div>
-        <div id="changeChecks"></div>
-        <div class="field"><span>변경완료 예정일</span><input type="date" id="doneDate" value="2027-03-31"></div>
-        <div class="field"><span>검사 개시일 (신규 설치·신규 취급 시)</span><input type="date" id="inspStart" value="2027-03-01"></div>
-        <button class="btn" id="judgeBtn">판정하기</button>
+    <div class="card">
+      <h2>판정 시험: 시설 변경 계획</h2>
+      <p class="desc">시설을 고르면 현재 정보가 표시됩니다. <b>변경 후</b> 칸에 계획을 입력하면 현재와 비교해 변경 유형(용량 증가·물질 추가·위험 증가·위치 변경·작성수준 상향 등)을 자동으로 찾고, 기준일에 시행 중인 규칙으로 계획서 제출 대상과 기한을 판정합니다.</p>
+      <div class="row" style="align-items:flex-end">
+        <label class="field"><span>대상 시설 <span class="muted" style="font-weight:400">(상단 사업장 선택 기준)</span></span><select id="cgFac" style="min-width:280px"></select></label>
+        <label class="field"><span>변경 건명</span><input type="text" id="cgName" placeholder="예: T-105 용제 저장탱크 증설" style="width:280px"></label>
       </div>
-      <div class="card"><h2>판정 결과</h2><p class="desc" id="judgeHint">왼쪽에서 변경 내용을 고르고 판정하기를 누르세요.</p><div id="judgeOut"></div></div>
+      <div id="cgForm"></div>
+      <div class="row" style="align-items:flex-end;margin-top:8px">
+        <label class="field"><span>변경완료 예정일</span><input type="date" id="doneDate" value="2027-03-31"></label>
+        <label class="field"><span>검사 개시일 (신규 설치·신규 취급 시)</span><input type="date" id="inspStart" value="2027-03-01"></label>
+        <div class="field"><button class="btn" id="judgeBtn">변경 내용 비교·판정</button> <button class="btn ghost" id="cgReset">현재값으로 되돌리기</button></div>
+      </div>
+      <details style="margin-top:6px"><summary>변경 유형 직접 지정 (고급 — 자동 판단에 추가)</summary><div id="changeChecks" style="columns:2"></div></details>
     </div>
+    <div class="card"><h2>판정 결과</h2><p class="desc" id="judgeHint">위에서 변경 후 값을 입력하고 "변경 내용 비교·판정"을 누르세요.</p><div id="cgDiff"></div><div id="judgeOut"></div></div>
     <div class="grid2">
       <div class="card"><h2>판정 시험: 용기·포장 표시</h2><p class="desc">현재 라벨에 있는 항목을 체크하세요. (현장 사진 판독 결과가 들어오는 자리)</p><div id="labelChecks"></div><button class="btn" id="labelBtn">점검하기</button></div>
       <div class="card"><h2>점검 결과</h2><div id="labelOut" class="desc">점검하기를 누르세요.</div></div>

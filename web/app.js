@@ -297,7 +297,7 @@ function renderSite() {
     ss.flatMap(site => site.문서.map(d => `<tr>${sc(site.id)}<td><b>${esc(d.이름)}</b><div class="muted">${d.번호}</div></td><td class="small">${esc(d.개정)}</td><td style="white-space:nowrap">${esc(d.담당자)}</td><td class="small">${docLinks(d).map(x => x === 'QTY' ? '수량기준 고시' : x).join(', ')}</td></tr>`)).join('');
 }
 $('siteKpi').onclick = e => { const c = e.target.closest('[data-site]'); if (!c) return; setSite(curSite === c.dataset.site ? 'ALL' : c.dataset.site); };
-function setSite(id) { curSite = id; $('siteSel').value = id; render(); }
+function setSite(id) { curSite = id; $('siteSel').value = id; $('cgName').dataset.auto = '1'; cgInit(false); render(); }
 
 // ================================================================ ② 모니터링
 const SOURCES = [['법제처 현행법령 (화학물질관리법·시행령·시행규칙)', 'Open API'], ['국가법령정보센터 행정규칙 (화학물질안전원·환경부 고시)', 'Open API'], ['입법예고 (국민참여입법센터)', '목록 수집'], ['화학물질안전원 공지사항', '목록 수집']];
@@ -1038,25 +1038,126 @@ const citeHtml = list => list.map(c => `<div class="cite"><b>${esc(c.조문)}</b
 const CHANGE = [['취급량_증가', '취급량 증가'], ['취급시설_용량_증가', '취급시설 용량 증가'], ['신규_취급시설', '새로운 취급시설 설치'], ['물질_변경_추가', '유해화학물질 변경·추가'],
   ['함량_농도_성상_변경', '함량·농도·성상 변경'], ['위험도_증가', '위 변경으로 위험 증가'], ['시설_위치_변경', '사업장 내 취급시설 위치 변경'],
   ['신규_취급시설_설치', '[고시] 취급시설 신규 설치·운영'], ['신규_유해화학물질_취급', '[고시] 규정수량 이상 신규 취급'], ['규정수량_이상_증가', '[고시] 최대보유량이 규정수량 이상으로 증가'], ['작성수준_2군에서_1군', '[고시] 작성수준 2군 → 1군']];
-$('facility').innerHTML = SITES.map(x => `<optgroup label="${esc(x.사업장)}">${x.시설.map(f => `<option>${esc(x.약칭)} · ${esc(f.이름)}</option>`).join('')}</optgroup>`).join('');
 $('changeChecks').innerHTML = CHANGE.map(([k, t]) => `<label class="chk"><input type="checkbox" data-k="${k}"> ${t}</label>`).join('');
+// ---- 판정 시험: 시설 변경 계획 (현재 → 변경 후 비교)
+const num = s => { const m = String(s ?? '').replace(/,/g, '').match(/[\d.]+/); return m ? +m[0] : null; };
+const unitOf = s => String(s ?? '').replace(/^[\d.,\s]+/, '').trim();
+const STATE_RANK = { 고체: 0, 액체: 1, 기체: 2 };
+let CG = null; // 편집 중인 변경 계획
+function cgInit(keepFac) {
+  if (!keepFac) { const prev = $('cgFac').value;
+    $('cgFac').innerHTML = selSites().map(x => `<optgroup label="${esc(x.사업장)}">${x.시설.map(f => `<option value="${x.id}|${f.id}">${esc(f.이름)}</option>`).join('')}<option value="${x.id}|NEW">+ ${esc(x.약칭)} 신규 취급시설 설치</option></optgroup>`).join('');
+    if ([...$('cgFac').options].some(o => o.value === prev)) $('cgFac').value = prev; }
+  const [sid, fid] = $('cgFac').value.split('|'), site = SITES.find(x => x.id === sid), f = site.시설.find(x => x.id === fid);
+  const mats = f ? f.물질.map(id => site.물질.find(m => m.id === id)).filter(Boolean) : [];
+  CG = { site, f, 신규: !f,
+    시설: { 용량: f ? num(f.용량) : null, 단위: f ? unitOf(f.용량) || 'm³' : 'm³', 위치: f ? (f.위치 || '현 위치') : '', 위험도: f ? f.위험도 : '가', 유형: f ? f.유형 : '저장탱크' },
+    물질: mats.map(m => ({ 기존: true, CAS: m.CAS, 이름: m.이름, 함량: m.함량, 성상: m.성상, 보유량: m.최대보유량_t, 삭제: false })) };
+  CG.후 = JSON.parse(JSON.stringify({ 시설: CG.시설, 물질: CG.물질 }));
+  if (!$('cgName').value || $('cgName').dataset.auto === '1') { $('cgName').value = f ? `${f.이름} 변경` : `${site.약칭} 신규 취급시설 설치`; $('cgName').dataset.auto = '1'; }
+  cgRender(); $('cgDiff').innerHTML = ''; $('judgeOut').innerHTML = '';
+}
+function cgRender() {
+  const a = CG.시설, b = CG.후.시설;
+  const tr = (label, cur, after, chg) => `<tr class="${chg ? 'chg' : ''}"><td><b>${label}</b></td><td class="cur">${cur}</td><td class="after">${after}</td></tr>`;
+  const fac = `<table class="cgt" style="margin:10px 0"><colgroup><col style="width:150px"><col style="width:38%"><col></colgroup>
+    <tr><th>시설 항목</th><th>현재 (등록 정보)</th><th>변경 후 (계획 입력)</th></tr>
+    ${CG.신규 ? tr('시설 유형', '-', `<select data-cg="시설.유형">${['저장탱크', '반응·제조시설', '보관·소분시설', '하역시설', '배관'].map(x => `<option ${x === b.유형 ? 'selected' : ''}>${x}</option>`).join('')}</select>`, true) : tr('시설 유형', esc(a.유형), esc(b.유형), false)}
+    ${tr('설계 용량', CG.신규 ? '-' : `${a.용량 ?? '-'} ${esc(a.단위)}`, `<div class="row" style="flex-wrap:nowrap"><input type="number" data-cg="시설.용량" value="${b.용량 ?? ''}" style="width:140px"> <span class="muted">${esc(b.단위)}</span></div>`, !CG.신규 && b.용량 !== a.용량)}
+    ${tr('설치 위치', CG.신규 ? '-' : esc(a.위치), `<input type="text" data-cg="시설.위치" value="${esc(b.위치)}" placeholder="예: B동 북측 신규 부지">`, !CG.신규 && b.위치 !== a.위치)}
+    ${tr('위험도 (정기검사)', CG.신규 ? '-' : esc(a.위험도), `<select data-cg="시설.위험도">${['가', '나', '다'].map(x => `<option ${x === b.위험도 ? 'selected' : ''}>${x}</option>`).join('')}</select>`, !CG.신규 && b.위험도 !== a.위험도)}</table>`;
+  const rows = CG.후.물질.map((m, i) => {
+    const o = CG.물질[i];
+    const c = k => o && !m.삭제 && String(m[k]) !== String(o[k]);
+    if (m.삭제) return `<tr class="na"><td><b>${esc(m.이름)}</b><div class="muted small">${m.CAS}</div></td><td class="cur">${o.함량}% · ${o.성상} · ${o.보유량} t</td><td colspan="3" class="muted">취급 중단 (이 시설에서 제외)</td><td><a href="#" data-cgdel="${i}">되살리기</a></td></tr>`;
+    return `<tr class="${!o ? 'chg' : ''}"><td><b>${esc(m.이름)}</b>${!o ? ' <span class="pill orange">신규</span>' : ''}<div class="muted small">${m.CAS}</div></td>
+      <td class="cur">${o ? `${o.함량}% · ${o.성상} · ${o.보유량} t` : '-'}</td>
+      <td class="after ${c('함량') ? 'x' : ''}"><input type="number" data-cg="물질.${i}.함량" value="${m.함량}" style="${c('함량') ? 'border-color:var(--orange);background:var(--lorange);font-weight:700' : ''}"></td>
+      <td class="after"><select data-cg="물질.${i}.성상" style="${c('성상') ? 'border-color:var(--orange);background:var(--lorange);font-weight:700' : ''}">${['고체', '액체', '기체'].map(x => `<option ${x === m.성상 ? 'selected' : ''}>${x}</option>`).join('')}</select></td>
+      <td class="after"><input type="number" data-cg="물질.${i}.보유량" value="${m.보유량}" style="${c('보유량') ? 'border-color:var(--orange);background:var(--lorange);font-weight:700' : ''}"></td>
+      <td><a href="#" data-cgdel="${i}" style="color:var(--red)">${o ? '제외' : '삭제'}</a></td></tr>`;
+  }).join('');
+  const mat = `<table class="cgt"><colgroup><col style="width:170px"><col style="width:190px"><col style="width:90px"><col style="width:90px"><col style="width:130px"><col style="width:60px"></colgroup>
+    <tr><th>취급 물질</th><th>현재 (함량·성상·사업장 최대보유량)</th><th>변경 후 함량(%)</th><th>성상</th><th>사업장 최대보유량(t)</th><th></th></tr>${rows || '<tr><td colspan="6" class="muted">취급 물질이 없습니다. 아래에서 추가하세요.</td></tr>'}
+    <tr><td colspan="6"><div class="row"><input type="text" id="cgAddQ" list="qjList" placeholder="물질 추가 — 물질명 또는 CAS (예: 106-99-0)" style="width:300px"><input type="number" id="cgAddPct" placeholder="함량 %" style="width:90px"><select id="cgAddSt" style="width:90px"><option>액체</option><option>기체</option><option>고체</option></select><input type="number" id="cgAddQty" placeholder="보유량 t" style="width:110px"><button class="btn ghost sm" id="cgAddBtn">+ 물질 추가</button></div>
+      <div class="muted small" style="margin-top:4px">최대보유량은 「규정수량 규정」 제2조에 따라 사업장 내 모든 시설의 합계(톤)로 입력합니다.</div></td></tr></table>`;
+  $('cgForm').innerHTML = fac + mat;
+}
+function cgFlags() {
+  const a = CG.시설, b = CG.후.시설, site = CG.site, F = [];
+  const add = (k, 설명, 근거) => F.push({ k, 설명, 근거 });
+  if (CG.신규) add('신규_취급시설_설치', `신규 취급시설(${b.유형}) 설치·운영`, '작성규정 제10조①1');
+  if (!CG.신규 && b.용량 != null && a.용량 != null && b.용량 > a.용량) add('취급시설_용량_증가', `설계 용량 ${a.용량} → ${b.용량} ${a.단위} (+${+(b.용량 - a.용량).toFixed(2)})`, '법 제23조③1');
+  if (!CG.신규 && b.위치 && b.위치 !== a.위치) add('시설_위치_변경', `설치 위치 "${a.위치}" → "${b.위치}"`, '시행규칙 제19조⑦');
+  // 변경 후 사업장 데이터 (물질 합계)
+  const after = JSON.parse(JSON.stringify(site));
+  CG.후.물질.forEach((m, i) => {
+    const o = CG.물질[i];
+    let sm = after.물질.find(x => x.CAS === m.CAS);
+    if (m.삭제) return;
+    if (!sm) { sm = { id: 'NEW-' + i, 이름: m.이름, CAS: m.CAS, 구분: '', 최대보유량_t: 0, 함량: m.함량, 성상: m.성상, 시설: [] }; after.물질.push(sm); }
+    if (!o) { const exist = site.물질.find(x => x.CAS === m.CAS); add(exist ? '물질_변경_추가' : '물질_변경_추가', `${m.이름} 이 시설에서 신규 취급${exist ? ' (사업장 내 기존 취급 물질)' : ' (사업장 최초 취급)'}`, '시행규칙 제19조⑦');
+      if (!exist) add('신규_유해화학물질_취급', `${m.이름} 사업장 신규 취급`, '작성규정 제10조①4'); }
+    if (o && +m.보유량 > +o.보유량) add('취급량_증가', `${m.이름} 최대보유량 ${o.보유량} → ${m.보유량} t`, '법 제23조③1');
+    if (o && +m.함량 > +o.함량) { add('함량_농도_성상_변경', `${m.이름} 함량 ${o.함량} → ${m.함량}%`, '시행규칙 제19조⑦'); add('위험도_증가', `${m.이름} 함량·농도 증가 = 위험 증가`, '작성규정 제11조④1'); }
+    if (o && m.성상 !== o.성상) { add('함량_농도_성상_변경', `${m.이름} 성상 ${o.성상} → ${m.성상}`, '시행규칙 제19조⑦');
+      if (STATE_RANK[m.성상] > STATE_RANK[o.성상]) add('위험도_증가', `${m.이름} 성상 ${o.성상} → ${m.성상} = 위험 증가`, m.성상 === '기체' && o.성상 === '액체' ? '작성규정 제11조④3' : '작성규정 제11조④2'); }
+    Object.assign(sm, { 함량: m.함량, 성상: m.성상, 최대보유량_t: +m.보유량 });
+  });
+  // 규정수량 구간·작성수준 비교
+  const qb = site.물질.map(m => ({ m, j: qtyJudge(K, { CAS: m.CAS, 함량: m.함량, 보유량: m.최대보유량_t, 성상: m.성상 }, base()) }));
+  const qa = after.물질.map(m => ({ m, j: qtyJudge(K, { CAS: m.CAS, 함량: m.함량, 보유량: m.최대보유량_t, 성상: m.성상 }, base()) }));
+  const RANK = { '최하위 미만': 0, '최하위 이상': 1, '하위 이상': 2, '상위 이상': 3 };
+  qa.forEach(({ m, j }) => { const p = qb.find(x => x.m.CAS === m.CAS); const r0 = p && p.j.해당 ? RANK[p.j.구간] : -1, r1 = j.해당 ? RANK[j.구간] : -1;
+    if (r1 >= 2 && r0 < 2) add('규정수량_이상_증가', `${m.이름} 최대보유량이 규정수량 이상으로 증가 (${p && p.j.해당 ? p.j.구간 : '대상 아님'} → ${j.구간})`, '작성규정 제10조①2'); });
+  const g0 = siteGroup(K, site, base()), g1 = siteGroup(K, after, base());
+  if (g0.결과 === '2군' && g1.결과 === '1군') add('작성수준_2군에서_1군', `계획서 작성수준 2군 → 1군`, '작성규정 제11조②');
+  const uniq = []; F.forEach(x => { if (!uniq.some(y => y.k === x.k && y.설명 === x.설명)) uniq.push(x); });
+  return { F: uniq, qb, qa, g0, g1, after };
+}
 function runJudge() {
+  const R0 = cgFlags();
   const input = { 변경완료_예정일: $('doneDate').value, 검사_개시일: $('inspStart').value };
+  R0.F.forEach(x => input[x.k] = true);
   document.querySelectorAll('#changeChecks input').forEach(c => { if (c.checked) input[c.dataset.k] = true; });
   const res = judgeChange(K, input, base());
-  $('judgeHint').textContent = `기준일 ${base()} 시행 규칙으로 판정 · 대상: ${$('facility').value}`;
-  if (!res.length) { $('judgeOut').innerHTML = `<div class="result"><h3><span class="pill green">해당 없음</span> 계획서 변경 제출 대상이 아님</h3><p class="muted">선택한 변경 사항이 법 제23조제3항 및 시행규칙 제19조제7항의 요건에 해당하지 않습니다.</p></div>`; return; }
-  $('judgeOut').innerHTML = res.map(r => {
+  $('judgeHint').textContent = `기준일 ${base()} 시행 규칙으로 판정 · ${CG.site.사업장} · ${$('cgName').value}`;
+  const qRow = ({ m, j }, p) => `<tr><td>${esc(m.이름)}</td><td>${p ? (p.j.해당 ? `<span class="pill gray">${p.j.구간}</span>` : '대상 아님') : '-'}</td><td>${j.해당 ? `<span class="pill ${j.구간 === '상위 이상' ? 'red' : j.구간 === '하위 이상' ? 'orange' : 'navy'}">${j.구간}</span> <span class="muted small">하위 ${j.하위} · 상위 ${j.상위 ?? '-'} t</span>` : `<span class="muted small">${esc(j.사유)}</span>`}</td></tr>`;
+  const changedQ = R0.qa.filter(x => { const p = R0.qb.find(y => y.m.CAS === x.m.CAS); return !p || p.m.최대보유량_t !== x.m.최대보유량_t || p.m.함량 !== x.m.함량 || p.m.성상 !== x.m.성상; });
+  $('cgDiff').innerHTML = `<div class="result" style="background:#fff"><h3>① 자동으로 찾은 변경 유형 <span class="muted small">(현재 ↔ 변경 후 비교)</span></h3>
+    ${R0.F.length ? R0.F.map(x => `<div class="flag"><b>✔ ${esc(FIELD_NAME[x.k] || CHANGE.find(c => c[0] === x.k)?.[1] || x.k)}</b><span>${esc(x.설명)}</span><span class="muted small" style="margin-left:auto">${esc(x.근거)}</span></div>`).join('') : '<div class="flag no">현재 정보와 달라진 항목이 없습니다. 변경 후 칸에 계획을 입력하세요.</div>'}
+    ${changedQ.length ? `<h3 style="margin-top:12px">② 규정수량 구간 변화 (R-QTY-1)</h3><table><tr><th>물질</th><th>현재</th><th>변경 후</th></tr>${changedQ.map(x => qRow(x, R0.qb.find(y => y.m.CAS === x.m.CAS))).join('')}</table>` : ''}
+    <h3 style="margin-top:12px">③ 사업장 계획서 작성수준 (R-GRP-1)</h3><p>${esc(CG.site.사업장)}: <b>${esc(R0.g0.결과)}</b> → <b style="color:${R0.g0.결과 !== R0.g1.결과 ? 'var(--red)' : 'inherit'}">${esc(R0.g1.결과)}</b> ${R0.g0.결과 !== R0.g1.결과 ? '<span class="pill red">작성수준 변경</span>' : '<span class="muted small">(변동 없음)</span>'}</p></div>`;
+  if (!res.length) { $('judgeOut').innerHTML = `<div class="result"><h3><span class="pill green">해당 없음</span> 계획서 신규·변경 제출 대상이 아님</h3><p class="muted">찾은 변경 유형이 판정 규칙의 제출 요건에 해당하지 않습니다. (변경관리 대장에는 기록)</p></div>`; return; }
+  $('judgeOut').innerHTML = `<h3 style="color:var(--navy);margin:6px 0">④ 제출 의무 판정 ${res.length}건</h3>` + res.map(r => {
     const d = r.기한 ? daysBetween(base(), r.기한) : null;
     return `<div class="result hit"><h3><span class="pill red">대상</span> ${esc(r.조치)}</h3>
-      <div class="kv"><b>제출 기한</b><span><b style="color:var(--red)">${esc(r.기한)}</b> ${d !== null ? `(${dday(r.기한)})` : ''} · ${esc(r.기한설명)}</span>
+      <div class="kv"><b>제출 기한</b><span>${r.기한 ? `<b style="color:var(--red)">${esc(r.기한)}</b> (${dday(r.기한)}) · ${esc(r.기한설명)}` : '<span class="muted">기준일 미입력</span>'}</span>
       <b>제출처</b><span>${esc(r.제출처)}</span><b>서식</b><span>${esc(r.서식)}</span><b>해당 사유</b><span>${r.사유.map(m => esc(m.설명)).join(', ')}</span>
       <b>적용 규칙</b><span><span class="pill navy">${esc(r.규칙)} v${r.버전}</span> ${ruleBadge(r.규칙)} 시행 ${esc(r.시행일)}</span></div>
       <details><summary>근거 조문 원문 보기</summary>${citeHtml(r.근거)}</details>
       ${intOf(r.규칙).length ? `<details open><summary>관련 해석·판단 ${intOf(r.규칙).length}건</summary>${intCards(intOf(r.규칙))}</details>` : ''}</div>`;
-  }).join('');
+  }).join('') + `<p class="muted small">→ 실제 시스템에서는 이 결과로 변경관리(MOC) 건이 등록되고, 제출 기한이 조치 목록과 담당자 알림에 반영됩니다.</p>`;
 }
+function setPathCG(path, v) { const ks = path.split('.'); let o = CG.후; ks.slice(0, -1).forEach(k => o = o[k]); o[ks[ks.length - 1]] = v; }
+$('cgFac').onchange = () => { $('cgName').dataset.auto = '1'; cgInit(true); };
+$('cgName').oninput = () => { $('cgName').dataset.auto = '0'; };
+$('cgReset').onclick = () => cgInit(true);
+$('cgForm').onchange = e => { const k = e.target.dataset.cg; if (!k) return; let v = e.target.value; if (e.target.type === 'number') v = v === '' ? null : +v; setPathCG(k, v); cgRender(); };
+$('cgForm').onclick = e => {
+  const d = e.target.closest('[data-cgdel]'); if (d) { e.preventDefault(); const i = +d.dataset.cgdel, m = CG.후.물질[i]; if (CG.물질[i]) m.삭제 = !m.삭제; else { CG.후.물질.splice(i, 1); } return cgRender(); }
+  if (e.target.id === 'cgAddBtn') {
+    let q = $('cgAddQ').value.trim(); if (!q) return toast('추가할 물질명 또는 CAS를 입력하세요');
+    let hit = [...K.규정수량표.별표3, ...K.규정수량표.별표2].find(r => r.CAS.includes(q)) || [...K.규정수량표.별표3, ...K.규정수량표.별표2].find(r => r.물질명.includes(q) && r.CAS.length);
+    const CAS = hit ? (hit.CAS.includes(q) ? q : hit.CAS[0]) : q;
+    const exist = CG.site.물질.find(m => m.CAS === CAS);
+    CG.후.물질.push({ 기존: false, CAS, 이름: exist ? exist.이름 : (hit ? hit.물질명.split('[')[0].trim() : q), 함량: +($('cgAddPct').value || 100), 성상: $('cgAddSt').value, 보유량: +($('cgAddQty').value || (exist ? exist.최대보유량_t : 0)), 삭제: false });
+    CG.물질.push(undefined); cgRender();
+  }
+};
+
 $('judgeBtn').onclick = runJudge;
+cgInit(false);
 $('qjList').innerHTML = [...K.규정수량표.별표3.map(r => [r.CAS[0], r.물질명]), ...K.규정수량표.별표2.slice(0, 2400).map(r => [r.CAS[0], r.물질명])].filter(x => x[0]).map(([c, n]) => `<option value="${c}">${esc(n.slice(0, 60))}</option>`).join('');
 $('qjBtn').onclick = () => {
   let q = $('qjQ').value.trim();
