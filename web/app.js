@@ -202,7 +202,7 @@ function analyze(n) {
     if (seen.has(p.규칙)) continue; seen.add(p.규칙);
     const rule = B.규칙.find(r => r.id === p.규칙);
     items.push({ 사업장: 'HQ', 구분: '지식(규칙)', 대상: rule ? `판정 규칙 ${rule.id} ${rule.이름}` : '물질별 규정수량 표', 담당자: '김지훈', 기한: addDays(n.시행일, -21), 신뢰도: 0.95,
-      영향: p.종류 === '확인' ? '판정 값 변경 없음 — 근거 문구 확인' : `${p.항목}: ${p.현행} → ${p.제안} (전 사업장 공통 적용)`, 조치: '④ 신·구 비교 화면에서 전문가 확인·승인', 근거: [p.근거], 규칙키: p.규칙 });
+      영향: p.종류 === '확인' ? '판정 값 변경 없음 — 근거 문구 확인' : `${p.항목}: ${p.현행} → ${p.제안} (전 사업장 공통 적용)`, 조치: '⑤ 신·구 비교 화면에서 전문가 확인·승인', 근거: [p.근거], 규칙키: p.규칙 });
   }
   for (const g of impact(B, ids).가이드) {
     items.push({ 사업장: 'HQ', 구분: '지식(가이드)', 대상: `지적·조치 가이드 ${g.코드} ${g.지적유형}`, 담당자: '문소희', 기한: addDays(n.시행일, -21), 신뢰도: 0.82,
@@ -344,7 +344,7 @@ function renderSite() {
 $('siteKpi').onclick = e => { const c = e.target.closest('[data-site]'); if (!c) return; setSite(curSite === c.dataset.site ? 'ALL' : c.dataset.site); };
 function setSite(id) { curSite = id; $('siteSel').value = id; $('cgName').dataset.auto = '1'; cgInit(false); render(); }
 
-// ================================================================ ② 모니터링
+// ================================================================ ③ 모니터링
 const SOURCES = [['법제처 현행법령 (화학물질관리법·시행령·시행규칙)', 'Open API'], ['국가법령정보센터 행정규칙 (화학물질안전원·환경부 고시)', 'Open API'], ['입법예고 (국민참여입법센터)', '목록 수집'], ['화학물질안전원 공지사항', '목록 수집']];
 function renderMonitor() {
   const ck = S.checked || '오늘 06:00';
@@ -370,7 +370,7 @@ function propWarn(n) {
   const pend = ps.filter(({ i }) => !propState(n, i));
   if (!pend.length) return `<div class="small" style="margin:0 0 8px"><span class="pill green">규칙 확정</span> 개정 규칙 ${ps.length}건 확정 — 시행일부터 새 기준으로 공식 판정</div>`;
   const d = diffDays(base(), n.시행일), red = d <= 60;
-  return `<div class="small" style="margin:0 0 8px;padding:6px 10px;border-radius:8px;background:${red ? '#FDECEC' : '#FFF4E5'};border:1px solid ${red ? 'var(--red)' : 'var(--orange)'}"><b style="color:${red ? 'var(--red)' : 'var(--orange)'}">⚠ 시행 ${d >= 0 ? 'D-' + d : '경과'}, 규칙 미확정 ${pend.length}건</b> — AI 추천 변경안이 ⑦에서 확정되기 전이라 공식 판정은 기존 규칙, 새 기준은 권고 일정으로만 표시됩니다. <a href="#" data-p7="P|${n.id}|${pend[0].i}">⑦에서 확정 →</a></div>`;
+  return `<div class="small" style="margin:0 0 8px;padding:6px 10px;border-radius:8px;background:${red ? '#FDECEC' : '#FFF4E5'};border:1px solid ${red ? 'var(--red)' : 'var(--orange)'}"><b style="color:${red ? 'var(--red)' : 'var(--orange)'}">⚠ 시행 ${d >= 0 ? 'D-' + d : '경과'}, 규칙 미확정 ${pend.length}건</b> — AI 추천 변경안이 ②에서 확정되기 전이라 공식 판정은 기존 규칙, 새 기준은 권고 일정으로만 표시됩니다. <a href="#" data-p7="P|${n.id}|${pend[0].i}">②에서 확정 →</a></div>`;
 }
 $('noticeList').onclick = e => {
   const p7 = e.target.closest('[data-p7]'); if (p7) { e.preventDefault(); return openReview(p7.dataset.p7); }
@@ -389,7 +389,7 @@ $('checkNow').onclick = () => {
   }, 1200);
 };
 
-// ================================================================ ③ 영향 분석·조치
+// ================================================================ ④ 영향 분석·조치
 function noticeHead(n) {
   return `<div class="row" style="gap:6px">${stPill(nstate(n))}<span class="pill line">${esc(n.구분)}</span><b style="color:var(--navy)">${esc(n.제목)}</b></div>
     <div class="row small muted" style="margin-top:6px"><span>${esc(n.공포번호)}</span><span>공포 ${n.공포일}</span><span>시행 <b style="color:var(--text)">${n.시행일}</b> (${dday(n.시행일)})</span><span>${esc(n.요약)}</span></div>${propWarn(n).replace('margin:0 0 8px', 'margin:8px 0 0')}`;
@@ -516,7 +516,7 @@ function taskRow(x, i) {
       <div class="row noprint" style="margin-top:6px"><button class="btn green sm" data-adopt="${i}:${j}">채택</button><button class="btn ghost sm" data-edit="${i}:${j}">문구 수정 후 채택</button>${r.채택 ? `<button class="btn ghost sm" data-undo="${i}:${j}">채택 취소</button>` : ''}</div>
       <div class="hidden" id="ed-${i}-${j}"><textarea>${esc(r.최종 || r.수정안)}</textarea><button class="btn blue sm" data-save="${i}:${j}">저장·채택</button></div></div>`).join('')}</details>`;
   }
-  const link = x.규칙키 ? ` <a href="#" data-rule="1" class="small">→ ⑦ 확정 화면</a>` : '';
+  const link = x.규칙키 ? ` <a href="#" data-rule="1" class="small">→ ② 확정 화면</a>` : '';
   const jc = { '확인 전': 'orange', '조치 대상': 'navy', 비대상: 'gray' }[x.판단];
   const judge = `<select data-f="판단" style="border-color:var(--${jc === 'gray' ? 'line' : jc});font-weight:700">${JD.map(v => `<option ${v === x.판단 ? 'selected' : ''}>${v}</option>`).join('')}</select>
     ${x.출처 === 'AI' ? `<div class="small muted" style="margin-top:3px">AI 추천: ${(x.신뢰도 || 0) < 0.7 ? '검토 필요' : '조치 대상'}</div>` : ''}
@@ -596,7 +596,7 @@ $('selN3').onchange = e => { cur = e.target.value; renderAna(); };
 $('cmpLink').onclick = () => showTab('t4');
 $('printBtn').onclick = () => { document.querySelectorAll('#taskTable details').forEach(d => d.open = true); window.print(); };
 
-// ================================================================ ④ 신·구 비교·규칙 반영
+// ================================================================ ⑤ 신·구 비교·규칙 반영
 function renderCmp() {
   $('selN4').innerHTML = noticeOpts();
   const n = N();
@@ -610,7 +610,7 @@ function renderCmp() {
       <p class="muted" style="margin:0 0 8px">${esc(p.설명)}</p>
       <div class="kv"><b>변경 항목</b><span>${esc(p.항목)}</span><b>현행 → 제안</b><span>${esc(p.현행)} → <b>${esc(a ? (a.값 ?? p.제안) : p.제안)}</b></span><b>적용 시행일</b><span>${esc(a ? a.시행일 : p.시행일)}</span><b>근거 조문</b><span><code>${esc(p.근거)}</code></span>
         ${a ? `<b>확정</b><span>${esc(a.승인자)} · ${esc(a.일시)}${a.의견 ? ` — ${esc(a.의견)}` : ''}</span>` : ''}</div>
-      ${st ? '' : `<div class="row"><button class="btn blue" data-go7="${i}">⑦ 규칙 검토·확정에서 확정하기 →</button><span class="small muted">확정 전에는 기존 확정 규칙으로 판정하고, 이 변경안은 '권고 일정'으로만 표시합니다.</span></div>`}</div>`;
+      ${st ? '' : `<div class="row"><button class="btn blue" data-go7="${i}">② 규칙 검토·확정에서 확정하기 →</button><span class="small muted">확정 전에는 기존 확정 규칙으로 판정하고, 이 변경안은 '권고 일정'으로만 표시합니다.</span></div>`}</div>`;
   }).join('') || '<p class="muted">규칙 변경 제안이 없습니다.</p>';
   renderKX();
 }
@@ -1056,7 +1056,7 @@ function showYaml(a) {
   $('yamlOut').textContent = y; $('yamlBox').classList.remove('hidden');
 }
 
-// ================================================================ ⑤ 대시보드
+// ================================================================ ⑥ 대시보드
 function renderDash() {
   const raw = NOTICES.flatMap(n => (S.notices[n.id]?.tasks || []).filter(inSite).map(t => ({ ...t, n })));
   const all = raw.filter(act), jw = raw.filter(t => t.판단 === '확인 전').length, jn = raw.length - all.length;
@@ -1100,7 +1100,7 @@ function renderDash() {
 }
 $('dashCards').onclick = e => { const p7 = e.target.closest('[data-p7]'); if (p7) { e.preventDefault(); return openReview(p7.dataset.p7); } const c = e.target.closest('[data-n]'); if (!c) return; goNotice(c.dataset.n, 't3'); if (!S.notices[c.dataset.n]) runAnalysis(); };
 
-// ================================================================ ⑥ 지식 기반·판정
+// ================================================================ ⑦ 지식 기반·판정
 const citeHtml = list => list.map(c => `<div class="cite"><b>${esc(c.조문)}</b> <span class="muted">(${esc(c.법령)}, 시행 ${esc(c.시행일)})</span>${c.id ? srcBtn(c.id) : ''}<br>${esc(c.내용)}</div>`).join('');
 const CHANGE = [['취급량_증가', '취급량 증가'], ['취급시설_용량_증가', '취급시설 용량 증가'], ['신규_취급시설', '새로운 취급시설 설치'], ['물질_변경_추가', '유해화학물질 변경·추가'],
   ['함량_농도_성상_변경', '함량·농도·성상 변경'], ['위험도_증가', '위 변경으로 위험 증가'], ['시설_위치_변경', '사업장 내 취급시설 위치 변경'],
@@ -1201,7 +1201,7 @@ function runJudge() {
     const rp = resP.find(x => x.규칙 === r.규칙), adv = rp && rp.기한 && r.기한 && rp.기한 < r.기한 ? rp : null;
     const pn = adv ? pendingNotices().find(n => (n.규칙제안 || []).some(q => q.규칙 === r.규칙)) : null;
     return `<div class="result hit"><h3><span class="pill red">대상</span> ${esc(r.조치)}</h3>
-      <div class="kv"><b>제출 기한</b><span>${r.기한 ? `<b style="color:var(--red)">${esc(r.기한)}</b> (${dday(r.기한)}) · ${esc(r.기한설명)}` : '<span class="muted">기준일 미입력</span>'}${adv ? `<br><span style="color:var(--orange);font-weight:700">권고 ${esc(adv.기한)} (${dday(adv.기한)})</span> <span class="small">— 미확정 개정안 기준·잠정${pn ? ` (${esc(pn.id)}, <a href="#" data-p7="P|${pn.id}|${pn.규칙제안.findIndex(q => q.규칙 === r.규칙)}">⑦에서 확정</a>)` : ''}</span>` : ''}</span>
+      <div class="kv"><b>제출 기한</b><span>${r.기한 ? `<b style="color:var(--red)">${esc(r.기한)}</b> (${dday(r.기한)}) · ${esc(r.기한설명)}` : '<span class="muted">기준일 미입력</span>'}${adv ? `<br><span style="color:var(--orange);font-weight:700">권고 ${esc(adv.기한)} (${dday(adv.기한)})</span> <span class="small">— 미확정 개정안 기준·잠정${pn ? ` (${esc(pn.id)}, <a href="#" data-p7="P|${pn.id}|${pn.규칙제안.findIndex(q => q.규칙 === r.규칙)}">②에서 확정</a>)` : ''}</span>` : ''}</span>
       <b>제출처</b><span>${esc(r.제출처)}</span><b>서식</b><span>${esc(r.서식)}</span><b>해당 사유</b><span>${r.사유.map(m => esc(m.설명)).join(', ')}</span>
       <b>적용 규칙</b><span><span class="pill navy">${esc(r.규칙)} v${r.버전}</span> ${ruleBadge(r.규칙)} 시행 ${esc(r.시행일)}</span></div>
       <details><summary>근거 조문 원문 보기</summary>${citeHtml(r.근거)}</details>
@@ -1315,7 +1315,7 @@ function openSource(id, extra) {
     if (id.startsWith('QTY-B')) {
       const T = K.규정수량표, b3 = id.includes('B3');
       body = `<div class="doc"><h4>${esc(S0.이름)}</h4><p style="text-align:center"><b>${b3 ? '[별표 3] 사고대비물질별 규정수량' : '[별표 2] 인체급성유해성, 인체만성유해성, 생태유해성 물질별 규정수량'}</b></p>
-        <div class="art on">${esc((T.일반기준[b3 ? '별표3' : '별표2'] || []).join('\n'))}</div>${extra || ''}<p class="muted small">전체 표: 별표 2 ${T.별표2.length}행 · 별표 3 ${T.별표3.length}행 (⑥ 지식 기반·판정의 물질 규정수량 판정기에서 검색)</p></div>`;
+        <div class="art on">${esc((T.일반기준[b3 ? '별표3' : '별표2'] || []).join('\n'))}</div>${extra || ''}<p class="muted small">전체 표: 별표 2 ${T.별표2.length}행 · 별표 3 ${T.별표3.length}행 (⑦ 지식 기반·판정의 물질 규정수량 판정기에서 검색)</p></div>`;
     }
     $('srcBody').innerHTML = body;
     $('srcModal').classList.remove('hidden');
@@ -1348,7 +1348,7 @@ $('srcModal').onclick = e => { if (e.target.id === 'srcModal') $('srcModal').cla
 document.addEventListener('click', e => { const p7 = e.target.closest('[data-p7]'); if (p7) { e.preventDefault(); openReview(p7.dataset.p7); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('srcModal').classList.add('hidden'); });
 
-// ================================================================ ⑦ 규칙 검토·확정
+// ================================================================ ② 규칙 검토·확정
 const RV_ST = { 'AI 초안': 'gray', '검토 중': 'orange', '수정 요청': 'red', '확정': 'green', '반려': 'red' };
 let RV = { sel: null, filter: '' };
 function rvOf(r) {
@@ -1369,7 +1369,7 @@ function rvCases(r) {
     return { c, act, ok };
   });
 }
-// ---- ⑦ 개정 반영 대기 (AI 추천) — 모니터링된 고시의 규칙 변경안
+// ---- ② 개정 반영 대기 (AI 추천) — 모니터링된 고시의 규칙 변경안
 function propItems() { return NOTICES.flatMap(n => (n.규칙제안 || []).map((p, i) => ({ key: `P|${n.id}|${i}`, n, p, i, st: propState(n, i) }))); }
 const propRvSt = st => st === '승인' ? '확정' : st === '반려' ? '반려' : 'AI 추천';
 function openReview(key) { RV.sel = key; RV.filter = ''; showTab('t8'); }
@@ -1381,7 +1381,7 @@ function propImpact(n, i, 값, 시행일) {
   if (p.종류 === '기한일수') {
     const rows = SITES.flatMap(site => site.변경관리.filter(m => m.상태 === '진행').map(m => ({ site, m, now: mocDueK(K, m), aft: mocDueK(K1, m) })));
     return `<table><tr><th>사업장</th><th>변경관리</th><th>변경완료 예정</th><th>현재 공식 기한</th><th>확정 후 공식 기한</th></tr>${rows.map(x => `<tr><td>${sitePill(x.site.id)}</td><td>${esc(x.m.id)} ${esc(x.m.이름)}</td><td>${esc(x.m.변경완료_예정일)}</td><td>${x.now || '-'}</td><td>${x.aft && x.aft !== x.now ? `<b style="color:var(--red)">${x.aft}</b> <span class="small">(${dday(x.aft)})</span>` : (x.aft || '-') + ' <span class="small muted">변동 없음</span>'}</td></tr>`).join('')}</table>
-      <p class="muted small" style="margin:4px 0 0">변경완료 예정일이 적용 시행일(${esc(시행일)}) 이후인 건만 새 기한이 적용됩니다. 확정하면 ③ 조치 기한이 자동으로 다시 계산됩니다.</p>`;
+      <p class="muted small" style="margin:4px 0 0">변경완료 예정일이 적용 시행일(${esc(시행일)}) 이후인 건만 새 기한이 적용됩니다. 확정하면 ④ 조치 기한이 자동으로 다시 계산됩니다.</p>`;
   }
   if (p.종류 === '수량기준') {
     const rows = SITES.flatMap(site => site.물질.filter(m => m.CAS === p.CAS).map(m => {
@@ -1407,10 +1407,10 @@ function renderPropDetail(key) {
   $('rvDetail').innerHTML = `
     <div class="result ${locked ? '' : 'hit'}" style="${locked ? 'background:#fff' : ''}">
       <div class="row between"><h3 style="margin:0">${rule ? `${esc(rule.id)} ${esc(rule.이름)}` : '물질별 규정수량 표'} <span class="pill gray">${esc(p.종류)}</span> ${propPill(n, i)}</h3>
-        <button class="btn ghost sm" data-pgo4="${n.id}">④ 신·구 비교 ↗</button></div>
+        <button class="btn ghost sm" data-pgo4="${n.id}">⑤ 신·구 비교 ↗</button></div>
       <p class="muted" style="margin:6px 0">${esc(p.설명)}</p>
       <div class="kv"><b>감지 고시</b><span>${esc(n.제목)}</span><b>공포·시행</b><span>공포 ${esc(n.공포일)} · 시행 ${esc(n.시행일)} · 감지 ${esc(n.감지일)} (${esc(n.감지경로)})</span>
-        <b>확정 전 판정</b><span>기존 <b>확정 규칙</b>으로 공식 판정합니다. 이 변경안은 ①③⑥에서 <b style="color:var(--orange)">권고 일정</b>(더 이른 기한)으로만 표시됩니다.${linked.length ? ` 현재 권고 표시 중인 조치 ${linked.length}건.` : ''}${!locked && d <= 60 ? ` <b style="color:var(--red)">시행 ${d >= 0 ? 'D-' + d : '경과'} — 확정이 필요합니다.</b>` : ''}</span></div>
+        <b>확정 전 판정</b><span>기존 <b>확정 규칙</b>으로 공식 판정합니다. 이 변경안은 ①④⑦에서 <b style="color:var(--orange)">권고 일정</b>(더 이른 기한)으로만 표시됩니다.${linked.length ? ` 현재 권고 표시 중인 조치 ${linked.length}건.` : ''}${!locked && d <= 60 ? ` <b style="color:var(--red)">시행 ${d >= 0 ? 'D-' + d : '경과'} — 확정이 필요합니다.</b>` : ''}</span></div>
     </div>
     <div class="result" style="background:#fff"><h3>바뀐 조문 (신·구)</h3>${n.변경조문.map(c => `<div style="margin-bottom:10px"><div class="row" style="margin-bottom:4px"><b style="color:var(--navy)">${esc(c.조문)}</b><span class="muted">${esc(c.제목)}</span>${srcBtn(c.id)}</div>${cmpBox(c.구, c.신, '개정 전', `개정 후 (시행 ${n.시행일})`)}</div>`).join('')}</div>
     <div class="result" style="background:#fff"><h3>AI가 추천한 규칙 변경</h3>
@@ -1452,7 +1452,7 @@ function renderRvDetail() {
   $('rvDetail').innerHTML = `
     <div class="result" style="background:#fff">
       <div class="row between"><h3 style="margin:0">${esc(r.id)} ${esc(r.이름)} <span class="pill gray">${esc(r.유형)}</span> <span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></h3>
-        <div class="row"><button class="btn ghost sm" data-rvgo="${r.id}">④에서 수정·편집 ↗</button></div></div>
+        <div class="row"><button class="btn ghost sm" data-rvgo="${r.id}">⑤에서 수정·편집 ↗</button></div></div>
       <p class="muted" style="margin:6px 0">${esc(r.설명)}</p>
       <div class="kv"><b>출처 고시</b><span>${esc(r.출처고시 || '화학물질관리법·시행규칙 (발췌)')}</span><b>작성</b><span>${esc(M.작성 || '-')} · ${esc(M.작성일 || '')} · v${v.버전} (시행 ${v.시행일})</span><b>AI 요약</b><span>${esc(M.요약 || '-')}</span></div>
     </div>
@@ -1460,7 +1460,7 @@ function renderRvDetail() {
     <div class="result" style="background:#fff"><h3>근거 원문 (고시·법령) <span class="muted small">— 📄 원문 페이지를 누르면 원본 문서의 해당 쪽을 표시</span></h3>${citeHtml(cite0(v.근거))}</div>
     <div class="result ${issues.length && !allChecked ? 'hit' : ''}" style="${issues.length && !allChecked ? '' : 'background:#fff'}"><h3>쟁점·확인 필요 사항 ${issues.length ? `<span class="muted small">(${issues.filter((_, i) => rv.체크?.[i]).length}/${issues.length} 확인)</span>` : ''}</h3>
       ${issues.length ? issues.map((t, i) => `<label class="chk" style="align-items:flex-start"><input type="checkbox" data-rvchk="${i}" ${rv.체크?.[i] ? 'checked' : ''} ${locked ? 'disabled' : ''}> <span>${esc(t)}</span></label>`).join('') : '<p class="muted small">AI가 표시한 쟁점이 없습니다.</p>'}
-      <p class="muted small" style="margin:6px 0 0">모든 쟁점을 확인해야 확정할 수 있습니다. 해석이 필요하면 ④ 지식 편집에서 <b>해석·판단</b>을 등록해 이 규칙에 연결하세요.</p></div>
+      <p class="muted small" style="margin:6px 0 0">모든 쟁점을 확인해야 확정할 수 있습니다. 해석이 필요하면 ⑤ 지식 편집에서 <b>해석·판단</b>을 등록해 이 규칙에 연결하세요.</p></div>
     <div class="result" style="background:#fff"><h3>검증 사례 (지금 엔진으로 실행)</h3>
       ${cases.length ? `<table><tr><th>사례</th><th>입력</th><th>기대</th><th>실제</th><th>결과</th></tr>${cases.map(({ c, act, ok }) => `<tr><td class="small">${esc(c.설명)}</td><td class="small"><code>${esc(JSON.stringify(c.입력))}</code></td><td class="small">${esc(JSON.stringify(c.기대))}</td><td class="small">${esc(Object.keys(c.기대).map(k => `${k}: ${act[k] ?? '-'}`).join(', '))}</td><td><span class="pill ${ok ? 'green' : 'red'}">${ok ? '통과' : '불일치'}</span>${r.유형 === '수량판정' ? `<br><button class="btn ghost sm srcbtn" data-src="${act.표 === '별표3' ? 'QTY-B3-일반' : 'QTY-B2-일반'}" data-extra="${encodeURIComponent('<p><b>이 사례에 해당하는 원문 행</b> (노란 행이 적용된 값)</p>' + qtyRowsHtml(c.입력.CAS, act.행))}">📄 별표 원문 행</button>` : ''}</td></tr>`).join('')}</table>` : '<p class="muted small">등록된 검증 사례가 없습니다.</p>'}
       ${intOf(r.id).length ? `<h3>연결된 해석·판단</h3>${intCards(intOf(r.id))}` : ''}</div>
@@ -1515,7 +1515,7 @@ $('rvExport') && ($('rvExport').onclick = () => {
 });
 const ruleBadge = id => { const r = K.규칙.find(x => x.id === id); if (!r) return ''; const st = rvOf(r).상태; return st === '확정' ? '<span class="pill green">확정 규칙</span>' : `<span class="pill orange" title="전문가 확정 전 규칙">미확정 (${st})</span>`; };
 
-// ================================================================ ⑦ GitHub 흐름
+// ================================================================ ⑧ GitHub 흐름
 const gh = p => repo ? `https://github.com/${repo}${p}` : '#';
 $('lnkActions').href = gh('/actions'); $('lnkPulls').href = gh('/pulls');
 const FLOW = [
