@@ -372,7 +372,7 @@ function propWarn(n) {
   const pend = ps.filter(({ i }) => !propState(n, i));
   if (!pend.length) return `<div class="small" style="margin:0 0 8px"><span class="pill green">규칙 확정</span> 개정 규칙 ${ps.length}건 확정 — 시행일부터 새 기준으로 공식 판정</div>`;
   const d = diffDays(base(), n.시행일), red = d <= 60;
-  return `<div class="small" style="margin:0 0 8px;padding:6px 10px;border-radius:8px;background:${red ? '#FDECEC' : '#FFF4E5'};border:1px solid ${red ? 'var(--red)' : 'var(--orange)'}"><b style="color:${red ? 'var(--red)' : 'var(--orange)'}">⚠ 시행 ${d >= 0 ? 'D-' + d : '경과'}, 규칙 미확정 ${pend.length}건</b> — AI 추천 변경안이 ②에서 확정되기 전이라 공식 판정은 기존 규칙, 새 기준은 권고 일정으로만 표시됩니다. <a href="#" data-p7="P|${n.id}|${pend[0].i}">②에서 확정 →</a></div>`;
+  return `<div class="small" style="margin:0 0 8px;padding:6px 10px;border-radius:8px;background:${red ? '#FDECEC' : '#FFF4E5'};border:1px solid ${red ? 'var(--red)' : 'var(--orange)'}"><b style="color:${red ? 'var(--red)' : 'var(--orange)'}">⚠ 시행 ${d >= 0 ? 'D-' + d : '경과'}, 규칙 미확정 ${pend.length}건</b> — 새 기준은 권고 일정으로만 표시 · <a href="#" data-p7="P|${n.id}|${pend[0].i}">②에서 확정 →</a></div>`;
 }
 $('noticeList').onclick = e => {
   const p7 = e.target.closest('[data-p7]'); if (p7) { e.preventDefault(); return openReview(p7.dataset.p7); }
@@ -404,7 +404,7 @@ function runAnalysis(after) {
   const n = N();
   const steps = STEPS(n);
   let k = 0;
-  const draw = () => { $('anaBox').innerHTML = `<div class="card"><h2>AI 영향도 분석 중…</h2><p class="desc">시연에서는 미리 만든 AI 결과를 재생하고, 사업장 데이터 대조는 실제로 계산합니다.</p><ul class="steps">${steps.map((s, i) => `<li class="${i < k ? 'done' : i === k ? 'run' : 'wait'}">${esc(s)}</li>`).join('')}</ul></div>`; };
+  const draw = () => { $('anaBox').innerHTML = `<div class="card"><h2>AI 영향도 분석 중…</h2><ul class="steps">${steps.map((s, i) => `<li class="${i < k ? 'done' : i === k ? 'run' : 'wait'}">${esc(s)}</li>`).join('')}</ul></div>`; };
   draw();
   const tick = () => {
     k++; draw();
@@ -445,7 +445,7 @@ function renderAna() {
   $('nHead3').innerHTML = noticeHead(n) + noticeSummary(n);
   const s = S.notices[n.id];
   if (!s) {
-    $('anaBox').innerHTML = `<div class="card" style="text-align:center;padding:36px"><h2>아직 분석하지 않은 고시입니다</h2><p class="desc">AI가 바뀐 조문을 읽고 우리 사업장의 물질·시설·변경관리·사내 문서·판정 규칙과 대조해 조치 목록을 만듭니다.</p><button class="btn orange big" id="anaBtn">우리 사업장 영향도 분석</button></div>`;
+    $('anaBox').innerHTML = `<div class="card" style="text-align:center;padding:36px"><h2>아직 분석하지 않은 고시입니다</h2><button class="btn orange big" id="anaBtn">우리 사업장 영향도 분석</button></div>`;
     $('anaBtn').onclick = () => runAnalysis();
     return;
   }
@@ -459,7 +459,7 @@ function renderAna() {
   const docRecs = t.filter(x => x.수정안).flatMap(x => x.수정안);
   $('anaBox').innerHTML = `
   <div class="card">
-    <div class="row between"><div><h2>영향 분석 결과 · 조치 목록</h2><p class="desc" style="margin:0">분석일 ${s.분석일} · AI 제안 ${t.filter(x => x.출처 === 'AI').length}건 · 직접 추가 ${t.filter(x => x.출처 !== 'AI').length}건 · 담당자가 AI 추천을 확인해 조치 대상·비대상을 판단합니다. 담당자와 기한은 바로 바꿀 수 있습니다.</p></div>
+    <div class="row between"><div><h2>영향 분석 결과 · 조치 목록</h2><p class="desc" style="margin:0">분석일 ${s.분석일} · AI 제안 ${t.filter(x => x.출처 === 'AI').length}건 · 직접 추가 ${t.filter(x => x.출처 !== 'AI').length}건</p></div>
       <div class="row noprint">${jw ? `<button class="btn blue sm" id="bulkBtn">확인 전 ${jw}건 모두 조치 대상</button>` : ''}<button class="btn ghost sm" id="notifyBtn">담당자 알림 발송</button><button class="btn ghost sm" id="csvBtn">엑셀(CSV) 내보내기</button><button class="btn ghost sm" id="reBtn">다시 분석</button></div></div>
     <div class="chips"><span class="chip" style="${jw ? 'border-color:var(--orange);background:var(--lorange)' : ''}">판단 대기 <b>${jw}</b></span><span class="chip">조치 대상 <b>${jy}</b></span><span class="chip">비대상 <b>${jn}</b></span><span class="chip" style="${t.filter(x => act(x) && x.상태 === '완료' && !(x.증빙 || []).length).length ? 'border-color:var(--red);background:var(--lred)' : ''}">증빙 누락 <b>${t.filter(x => act(x) && x.상태 === '완료' && !(x.증빙 || []).length).length}</b></span><span class="muted" style="align-self:center">|</span>${Object.entries(cnt).map(([k, v]) => `<span class="chip">${esc(k)} <b>${v}</b></span>`).join('')}<span class="chip">문서 수정 제안 <b>${docRecs.length}</b>곳 (채택 ${docRecs.filter(r => r.채택).length})</span></div>
     <div class="chips">${bySite.map(b => `<span class="chip" data-site="${b.id === 'HQ' ? 'ALL' : b.id}" style="cursor:pointer;${curSite === b.id ? 'border-color:var(--blue);background:var(--bg)' : ''}">${esc(siteName(b.id))} <b>${b.n ? `${b.n}건` : '영향 없음'}</b>${b.n ? ` · 완료 ${b.a ? Math.round(b.d / b.a * 100) : 0}%${b.w ? ` · 판단 대기 ${b.w}` : ''}` : ''}</span>`).join('')}</div>
@@ -503,6 +503,145 @@ function renderAna() {
   };
 }
 function confirmBox(msg) { return window.confirm(msg); }
+// ================================================================ AI에게 물어보기 (조치 근거 설명)
+// 시연: 지식 기반(규칙·조문·고시·해석·사업장 데이터)만으로 설명을 구성. 운영 시 사내 sLLM이 같은 근거로 문장을 생성
+const ASK = { open: new Set(), busy: new Set() };
+function askSec(t, body, id) { return body ? `<div class="asksec" ${id ? `data-sec="${id}"` : ''} style="margin:10px 0 0"><div style="font-weight:800;color:var(--navy);margin-bottom:4px">${t}</div>${body}</div>` : ''; }
+function explainTask(x, n) {
+  const site = SITES.find(s0 => s0.id === x.사업장), sName = site ? site.사업장 : '본사(공통)';
+  const fact = [], logic = [], check = [];
+  let rule = x.규칙키 && x.규칙키 !== '수량기준' ? K.규칙.find(r => r.id === x.규칙키) : null, cites = [], dueTxt = '';
+  const ob = taskObl(x);
+  // 사업장 사실관계 + 판정 논리 (조치 유형별)
+  if (x.연동 && site) {
+    const m = site.변경관리.find(y => y.id === x.연동.moc);
+    if (m) {
+      fact.push(['변경관리', `${m.id} ${m.이름} (담당 ${m.담당자})`], ['변경 유형', m.변경유형], ['변경완료 예정일', m.변경완료_예정일], ['기존 계획서 제출 예정', m.계획서_제출예정 || '-']);
+      const jd = m.변경완료_예정일 > base() ? m.변경완료_예정일 : base();
+      const r0 = judgeChange(K, { ...mocFlags(m), 변경완료_예정일: m.변경완료_예정일 }, jd)[0], rp = judgeChange(KP(), { ...mocFlags(m), 변경완료_예정일: m.변경완료_예정일 }, jd)[0];
+      if (r0) {
+        rule = K.규칙.find(r => r.id === r0.규칙);
+        logic.push(`판정 규칙 <b>${esc(r0.규칙)} v${r0.버전}</b> (${esc(r0.규칙명)}, 시행 ${esc(r0.시행일)}) ${ruleBadge(r0.규칙)}의 제출 요건 중 <b>${r0.사유.map(s0 => esc(s0.설명)).join(', ')}</b>에 해당합니다.`);
+        logic.push(`변경 유형 "${esc(m.변경유형)}"은 시행규칙의 변경 제출 사유와 연결되므로, 변경된 화학사고예방관리계획서를 <b>${esc(r0.제출처 || '화학물질안전원장')}</b>에게 ${esc(r0.서식 || '서식')}에 따라 제출해야 합니다.`);
+        dueTxt = `공식 기한 <b>${esc(r0.기한)}</b> (${dday(r0.기한)}) — ${esc(r0.기한설명 || '')}. 변경완료 예정일(${esc(m.변경완료_예정일)})에 시행 중인 <b>확정 규칙</b>으로 계산했습니다.`;
+        if (rp && rp.기한 && rp.기한 < r0.기한) dueTxt += `<br><span style="color:var(--orange);font-weight:700">권고 ${esc(rp.기한)}</span> — 이번 고시(${esc(n.id)}) 개정안이 확정되면 적용될 기한입니다. 변경완료 예정일이 개정 시행일(${esc(n.시행일)}) 이후라 새 기한 적용 대상이므로, 확정 전이라도 권고 일정에 맞춰 준비하는 것이 안전합니다.`;
+        cites = r0.근거;
+      }
+      if (m.변경완료_예정일 < n.시행일) check.push(`변경완료 예정일이 개정 시행일(${esc(n.시행일)}) 전이면 종전 기한(30일 전)이 적용됩니다 — 일정이 앞당겨지면 다시 판정하세요.`);
+      check.push('취급량 증가가 계획서에 적은 최대 취급량 범위 안의 일시적 변동이면 변경 제출 대상이 아닐 수 있습니다 (관련 해석 참고).');
+    }
+  } else if (x.구분 === '물질' && site) {
+    const cas = (x.대상.match(/CAS ([\d-]+)/) || [])[1], m = cas && site.물질.find(y => y.CAS === cas);
+    if (m) {
+      fact.push(['물질', `${m.이름} (CAS ${m.CAS})`], ['분류', m.구분], ['최대보유량', `${m.최대보유량_t} t`], ['함량·성상', `${m.함량}% · ${m.성상}`], ['취급시설', (m.시설 || []).join(', ')]);
+      const q = (n.수량변경 || []).find(y => y.CAS === m.CAS);
+      const j0 = qtyJudge(K, { CAS: m.CAS, 함량: m.함량, 보유량: m.최대보유량_t, 성상: m.성상 }, n.시행일), j1 = qtyJudge(KP(), { CAS: m.CAS, 함량: m.함량, 보유량: m.최대보유량_t, 성상: m.성상 }, n.시행일);
+      rule = K.규칙.find(r => r.유형 === '수량판정');
+      if (q) logic.push(`이번 고시로 하위 규정수량이 <b>${esc(q.하위_구)} t → ${esc(q.하위_신)} t</b>로 낮아집니다. 이 사업장 최대보유량 ${m.최대보유량_t} t은 하위 규정수량의 ${(m.최대보유량_t / q.하위_구).toFixed(1)}배 → <b>${(m.최대보유량_t / q.하위_신).toFixed(1)}배</b>가 됩니다.`);
+      if (j0.해당) logic.push(`규정수량 판정 규칙 <b>${esc(j0.규칙)}</b>: 현재 <b>${esc(j0.구간)}</b>${j1.구간 !== j0.구간 ? ` → 개정 반영 시 <b style="color:var(--red)">${esc(j1.구간)}</b>` : ' (구간은 유지되지만 배수 증가)'}. ${(j1.메모 || []).map(esc).join(' ')}`);
+      logic.push('규정수량 배수와 구간은 화학사고예방관리계획서 작성수준(1군·2군), 장외영향평가 범위, 취급시설 검사 주기 판단에 함께 쓰이므로 계획서와 관련 문서를 다시 확인해야 합니다.');
+      cites = j1.근거 || [];
+      check.push('혼합물은 전체 혼합물 총량으로 최대보유량을 산정해야 합니다 — 입력값이 순물질량이면 결과가 달라질 수 있습니다.');
+    }
+  } else if (x.구분 === '시설' && site) {
+    const f = site.시설.find(y => y.이름 === x.대상);
+    if (f) {
+      fact.push(['시설', `${f.이름} (${f.유형}, ${f.용량 || '-'})`], ['위험도', f.위험도], ['최근 검사일', f.최근_검사일], ['연속 적합', `${f.연속적합_횟수}회 · 검사기관 ${f.검사기관수}곳`], ['방류벽·누출감지', `${f.방류벽 || '-'} · ${f.누출감지 || '-'}`]);
+      const sc = inspectionSchedule(K, site, base()).find(y => y.시설 === f.이름);
+      if (sc) { rule = K.규칙.find(r => r.id === sc.규칙); logic.push(`정기검사 결정표 <b>${esc(sc.규칙)} v${sc.버전}</b>: 사업장군 ${esc(site.사업장군)}·위험도 ${esc(f.위험도)} → 주기 ${sc.주기_년}년${sc.연장_년 ? ` + 연장 ${sc.연장_년}년` : ''}, 다음 검사 기한 <b>${esc(sc.기한)}</b> (${esc(sc.상태)}).`); cites = sc.근거; }
+      logic.push(`이번 고시가 바꾼 조항이 이 시설의 취급 물질 또는 검사 조건과 연결되어 영향 대상으로 분류했습니다.`);
+    }
+  } else if (x.구분 === '문서' && site) {
+    const d = site.문서.find(y => y.id === x.문서);
+    if (d) {
+      fact.push(['문서', `${d.이름} (${d.번호}, ${d.개정})`], ['관리 부서', `${d.부서} · ${d.담당자}`], ['문서가 인용하는 조문', docLinks(d).map(id => id === 'QTY' ? '규정수량 표' : artLabel(id)).join(', ')]);
+      const hit = n.변경조문.filter(c => docLinks(d).includes(c.id) || (c.id.startsWith('QTY') && docLinks(d).includes('QTY')));
+      logic.push(`이 문서는 이번 고시에서 바뀐 ${hit.length ? hit.map(c => `<b>${esc(c.조문)}</b>`).join(', ') : '조항'}을(를) 인용하고 있어 문구가 개정 내용과 어긋나게 됩니다.`);
+      if (x.수정안?.length) logic.push(`AI가 수정이 필요한 위치 ${x.수정안.length}곳을 찾았습니다: ${x.수정안.map(r => esc(r.위치)).join(' / ')}.`);
+      cites = cite0(docLinks(d).filter(id => id !== 'QTY'));
+    }
+  } else if (x.사업장 === 'HQ') {
+    fact.push(['대상', x.대상], ['담당', '본사 환경안전팀 · TO21 컨설팅본부']);
+    logic.push('판정 규칙과 지적·조치 가이드는 3개 사업장이 함께 쓰는 공통 지식입니다. 법규가 바뀌면 지식을 먼저 확정해야 각 사업장의 판정·기한이 새 기준으로 계산됩니다.');
+  } else {
+    fact.push(['사업장', sName], ['대상', x.대상]);
+    if (site) fact.push(['진행 중 변경관리', `${site.변경관리.filter(m => m.상태 === '진행').length}건`], ['취급 물질', `${site.물질.length}종`]);
+  }
+  if (!cites.length && rule) cites = cite0(latest(rule).근거 || []);
+  const ints = rule ? intOf(rule.id) : [];
+  if (!dueTxt) dueTxt = `조치 기한 <b>${esc(x.기한)}</b> (${dday(x.기한)}) — ${x.출처 === 'AI' ? `AI 영향 규칙 기준: 고시 시행일(${esc(n.시행일)}) 전 준비 기간을 두고 산정` : '담당자 지정'}. 담당자가 바꿀 수 있습니다.`;
+  if ((x.신뢰도 || 1) < 0.7) check.push(`AI 신뢰도 ${Math.round(x.신뢰도 * 100)}% — 담당자 확인이 필요합니다.`);
+  if (x.판단 === '비대상') check.push(`담당자가 비대상으로 판단: ${esc(x.판단사유 || '(사유 없음)')}`);
+  const o = ob ? oblOf(ob) : null;
+  const 결론 = `<b>${esc(sName)}</b>의 <b>${esc(x.대상)}</b>은(는) ${esc(n.제목.replace('[가상] ', ''))}(공포 ${esc(n.공포일)}, 시행 ${esc(n.시행일)})의 영향을 받습니다. 따라서 <b>「${esc(x.조치)}」</b> 조치가 필요합니다.${o ? ` 이 조치는 화관법 의무 <b>${esc(o.상위?.코드 || '')} ${esc(o.상위?.이름 || '')}</b>의 세부 업무 <b>${esc(o.코드)} ${esc(o.이름)}</b>에 해당합니다.` : ''}`;
+  return `<div class="askbox" data-askid="${esc(x.id)}" style="position:sticky;left:0;max-width:min(1140px,88vw);box-sizing:border-box;border:1px solid #C9B8F0;background:#FBF9FF;border-radius:10px;padding:12px 14px">
+    <div class="row between"><div><span class="ai">AI</span> <b>왜 ${esc(sName)}은(는) 이 조치를 해야 하나요?</b> <span class="muted small">· ${esc(aiLabel())}</span></div><button class="btn ghost sm noprint" data-askclose="${esc(x.id)}">닫기</button></div>
+    <div class="aiout"></div>
+    <div class="row noprint" style="margin-top:8px;gap:6px"><input type="text" class="askq" placeholder="추가 질문 (예: 계획서 범위 안 증설이면 비대상인가요?)" style="flex:1;min-width:240px"><button class="btn blue sm" data-askq="${esc(x.id)}">질문</button>${aiOn() ? '' : '<a href="#" class="small" data-aicfg="1">생성형 AI 연결</a>'}</div>
+    <details class="askev" ${aiOn() ? '' : 'open'} style="margin-top:8px"><summary class="small"><b>근거 자료</b> (지식 기반 설명 — 확정 규칙·조문·고시·사업장 데이터)</summary><div class="askevid">
+    ${askSec('결론', `<p style="margin:0">${결론}</p>`)}
+    ${askSec('이 사업장의 사실관계 (사업장 데이터)', fact.length ? `<div class="kv">${fact.map(([k, v]) => `<b>${esc(k)}</b><span>${esc(String(v))}</span>`).join('')}</div>` : '')}
+    ${askSec('판정 논리', `<ol style="margin:0;padding-left:20px">${(logic.length ? logic : [`AI 영향 규칙: ${esc(x.영향)}`]).map(l => `<li>${l}</li>`).join('')}</ol>`, 'logic')}
+    ${askSec('이번 고시로 바뀐 내용', n.변경조문.map(c => `<div style="margin-bottom:6px"><div class="row" style="margin-bottom:3px"><b style="color:var(--navy)">${esc(c.조문)}</b><span class="muted small">${esc(c.제목)}</span>${srcBtn(c.id)}</div>${cmpBox(c.구, c.신, '개정 전', `개정 후 (시행 ${n.시행일})`)}</div>`).join(''), 'diff')}
+    ${askSec('적용 법규·근거 조문 (현행 원문)', cites.length ? citeHtml(cites) : '<p class="muted small" style="margin:0">연결된 조문이 없습니다.</p>', 'cite')}
+    ${askSec('기한 산정', `<p style="margin:0">${dueTxt}</p>`, 'due')}
+    ${o ? askSec('의무 · 이행하지 않으면', `<p style="margin:0">${oblPill(ob)} ${penHtml(o)}</p>`, 'pen') : ''}
+    ${ints.length ? askSec('관련 해석·판단 (유권해석·컨설턴트)', intCards(ints), 'int') : ''}
+    ${check.length ? askSec('담당자 확인 사항 · 비대상이 될 수 있는 경우', `<ul style="margin:0;padding-left:20px">${check.map(c => `<li>${c}</li>`).join('')}</ul>`, 'check') : ''}
+    </div></details></div>`;
+}
+// ---- 생성형 AI 연결 (Claude API 또는 사내 온프레미스 LLM, 미설정 시 지식 기반 설명만)
+const AIKEY = 'regai-ai';
+function aiCfg() { try { return JSON.parse(localStorage.getItem(AIKEY)) || {}; } catch (e) { return {}; } }
+function aiSave(c) { try { localStorage.setItem(AIKEY, JSON.stringify(c)); } catch (e) { /* 저장 불가 */ } }
+const aiOn = () => { const c = aiCfg(); return c.종류 && c.종류 !== '지식' && (c.종류 === '사내' ? !!c.주소 : !!c.키); };
+const aiLabel = () => { const c = aiCfg(); return !aiOn() ? '지식 기반 (생성형 AI 미연결)' : c.종류 === 'Claude' ? `Claude (${c.모델 || 'claude-sonnet-4-5'})` : `사내 LLM (${c.모델 || '-'})`; };
+const AI_SYS = `너는 화학물질관리법(화관법) 전문 컨설턴트다. 사용자는 사업장 환경안전 담당자다.
+규칙: 1) 반드시 [근거 자료]에 있는 사실·조문·수치만 사용한다. 2) 결론을 먼저 말하고, 사업장 사실관계 → 적용 조문(조·항·호를 명시) → 판정 논리 → 기한 → 이행하지 않을 때의 벌칙 → 담당자가 확인할 점 순서로 설명한다. 3) 근거 자료에 없는 내용은 추측하지 말고 "확인 필요"라고 쓴다. 4) 벌칙 금액이 근거 자료에 없으면 금액을 쓰지 않는다. 5) 한국어, 개조식, 600자 내외.`;
+async function aiAsk(question, context, history = []) {
+  const c = aiCfg();
+  const user = `[질문]\n${question}\n\n[근거 자료]\n${context}`;
+  if (c.종류 === 'Claude') {
+    const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': c.키, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: c.모델 || 'claude-sonnet-4-5', max_tokens: 1500, system: AI_SYS, messages: [...history, { role: 'user', content: user }] }) });
+    const j = await res.json(); if (!res.ok) throw new Error(j.error?.message || res.status);
+    return j.content.map(b => b.text || '').join('');
+  }
+  const url = c.주소.replace(/\/$/, '') + (/\/chat\/completions$/.test(c.주소) ? '' : '/v1/chat/completions');
+  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...(c.키 ? { authorization: `Bearer ${c.키}` } : {}) },
+    body: JSON.stringify({ model: c.모델 || 'default', temperature: 0.2, messages: [{ role: 'system', content: AI_SYS }, ...history, { role: 'user', content: user }] }) });
+  const j = await res.json(); if (!res.ok) throw new Error(j.error?.message || res.status);
+  return j.choices[0].message.content;
+}
+const md = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^#{1,4}\s*(.+)$/gm, '<div style="font-weight:800;color:var(--navy);margin-top:6px">$1</div>').replace(/^\s*[-*]\s+(.+)$/gm, '<div style="padding-left:12px">• $1</div>').replace(/\n/g, '<br>').replace(/(<\/div>)<br>/g, '$1');
+const ASKH = {};
+async function runAi(id, question) {
+  const box = document.querySelector(`[data-askid="${id}"]`); if (!box) return;
+  const out = box.querySelector('.aiout'), dt = box.querySelector('.askev'), was = dt.open; dt.open = true; const ctx = box.querySelector('.askevid').innerText; dt.open = was;
+  const h = ASKH[id] ||= [];
+  out.insertAdjacentHTML('beforeend', `<div class="aiq small" style="margin-top:8px"><b>Q.</b> ${esc(question)}</div><div class="aia" style="margin-top:4px"><span class="muted small">${esc(aiLabel())}가 근거를 읽고 답변을 작성하는 중…</span></div>`);
+  const slot = out.lastElementChild;
+  try {
+    const ans = await aiAsk(question, ctx, h);
+    h.push({ role: 'user', content: `[질문]\n${question}` }, { role: 'assistant', content: ans });
+    slot.innerHTML = `<div style="background:#fff;border:1px solid #E3DAF7;border-radius:8px;padding:10px 12px">${md(ans)}</div>`;
+    log(`AI 질의: ${id} — ${question.slice(0, 40)}`, 'AI');
+  } catch (err) { slot.innerHTML = `<span style="color:var(--red)" class="small">AI 연결 실패: ${esc(String(err.message || err))} — AI 설정(주소·키·모델)을 확인하세요. 아래 지식 기반 설명은 그대로 볼 수 있습니다.</span>`; }
+}
+function openAiCfg() {
+  const c = aiCfg();
+  $('aiBody').innerHTML = `<div class="kv"><b>답변 엔진</b><span><select id="aiKind"><option value="지식" ${!c.종류 || c.종류 === '지식' ? 'selected' : ''}>지식 기반 (오프라인, 생성형 AI 미사용)</option><option value="Claude" ${c.종류 === 'Claude' ? 'selected' : ''}>Claude API (Anthropic)</option><option value="사내" ${c.종류 === '사내' ? 'selected' : ''}>사내 온프레미스 LLM (OpenAI 호환 API)</option></select></span>
+    <b>API 주소</b><span><input type="text" id="aiUrl" value="${esc(c.주소 || '')}" style="width:100%" placeholder="사내 LLM만 입력 · 예: http://10.0.0.5:8000/v1"></span>
+    <b>모델</b><span><input type="text" id="aiModel" value="${esc(c.모델 || '')}" style="width:280px" placeholder="Claude: claude-sonnet-4-5 · 사내: 모델명"></span>
+    <b>API 키</b><span><input type="password" id="aiKey" value="${esc(c.키 || '')}" style="width:100%" placeholder="Claude API 키 (사내 LLM은 필요 시)" autocomplete="off"></span></div>
+    <p class="muted small" style="margin:8px 0 0">키는 이 브라우저에만 저장됩니다 (시연 PC에서만 입력). 어느 엔진이든 화면의 근거 자료만 넘겨 답하게 합니다.</p>
+    <div class="row" style="margin-top:10px"><button class="btn green" id="aiSaveBtn">저장</button><button class="btn ghost" id="aiClear">키 삭제</button></div>`;
+  $('aiModal').classList.remove('hidden');
+  $('aiSaveBtn').onclick = () => { aiSave({ 종류: $('aiKind').value, 주소: $('aiUrl').value.trim(), 모델: $('aiModel').value.trim(), 키: $('aiKey').value.trim() }); $('aiModal').classList.add('hidden'); toast(`답변 엔진: ${aiLabel()}`); render(); };
+  $('aiClear').onclick = () => { aiSave({ 종류: '지식' }); $('aiModal').classList.add('hidden'); toast('AI 연결 정보를 지웠습니다'); render(); };
+}
+
 function taskAdv(x) { if (!x.연동) return null; const site = SITES.find(s0 => s0.id === x.사업장), m = site?.변경관리.find(y => y.id === x.연동.moc); return m ? mocAdvice(m).권고 : null; }
 function taskRow(x, i) {
   let adv;
@@ -526,15 +665,15 @@ function taskRow(x, i) {
     ${!wait && x.판단자 ? `<div class="small muted" style="margin-top:3px">확인: ${esc(x.판단자)}</div>` : ''}`;
   return `<tr class="${over ? 'over' : ''} ${na ? 'na' : ''}" data-i="${i}">
     <td>${sitePill(x.사업장)}</td>
-    <td><span class="pill line">${esc(x.구분)}</span><br>${src}${(o0 => o0 ? `<div style="margin-top:3px">${oblPill(o0)}</div>` : '')(taskObl(x))}</td>
+    <td><span class="pill line">${esc(x.구분)}</span><br>${src}${(o0 => { const o = o0 && oblOf(o0); return o ? `<div class="small" style="margin-top:3px;color:${OBL_CLR};line-height:1.3;white-space:normal" title="${esc((o.상위 ? o.상위.이름 + ' › ' : '') + o.이름)}"><b>${esc(o.코드)}</b> ${esc(o.이름)}</div>` : ''; })(taskObl(x))}</td>
     <td><b>${esc(x.대상)}</b><div class="muted">${esc(x.영향)}</div>${recs}</td>
-    <td class="act">${esc(x.조치)}${link ? `<div>${link}</div>` : ''}</td>
+    <td class="act">${esc(x.조치)}${link ? `<div>${link}</div>` : ''}<div class="noprint" style="margin-top:4px"><button class="btn ghost sm" data-ask="${esc(x.id)}" style="border-color:#C9B8F0;color:#5B3FA8">${ASK.open.has(x.id) ? '설명 닫기' : 'AI에게 물어보기'}</button></div></td>
     <td>${judge}</td>
     <td><select data-f="담당자" title="${esc((PEOPLE.find(p => p.이름 === x.담당자) || {}).부서 || '')}">${personOptsShort(x.담당자, x.사업장 === 'HQ' ? null : x.사업장)}</select><div class="small muted">${esc((PEOPLE.find(p => p.이름 === x.담당자) || {}).부서 || '')}</div></td>
     <td><input type="date" data-f="기한" value="${x.기한}"><div class="small ${over ? '' : 'muted'}" style="${over ? 'color:var(--red);font-weight:700' : ''}">${dday(x.기한)}${x.연동 ? ' · 공식' : ''}</div>${(adv = taskAdv(x)) && adv < x.기한 && x.상태 !== '완료' && !na ? `<div class="small" style="color:var(--orange);font-weight:700;margin-top:2px" title="미확정 개정안 기준 — 더 이른 일정으로 준비 권고">권고 ${adv}<br><span style="font-weight:400">개정안 기준·잠정</span></div>` : ''}</td>
     <td>${na ? '<span class="pill gray">해당 없음</span>' : `<select data-f="상태" ${wait ? 'disabled title="먼저 조치 대상 여부를 확인하세요"' : ''}>${ST.map(s => `<option ${s === x.상태 ? 'selected' : ''}>${s}</option>`).join('')}</select>${wait ? '<div class="small muted">판단 후 진행</div>' : ''}`}</td>
     <td>${evCell(x, i)}</td>
-    <td class="noprint">${x.출처 !== 'AI' ? `<button class="btn ghost sm" data-del="${i}">삭제</button>` : ''}</td></tr>`;
+    <td class="noprint">${x.출처 !== 'AI' ? `<button class="btn ghost sm" data-del="${i}">삭제</button>` : ''}</td></tr>` + (ASK.open.has(x.id) ? `<tr class="askrow noprint"><td colspan="10" style="background:#fff">${explainTask(x, N())}</td></tr>` : '');
 }
 function evCell(x, i) {
   if (x.판단 === '비대상') return '<span class="muted small">-</span>';
@@ -544,6 +683,7 @@ function evCell(x, i) {
   return `${list || '<span class="pill red">증빙 필요</span>'}<label class="btn ghost sm noprint" style="margin-top:3px;display:inline-block">+ 첨부<input type="file" multiple data-ev="${i}" style="display:none"></label>`;
 }
 function onTaskChange(e) {
+  if (e.target.closest(".askrow")) return;
   if (e.target.dataset.ev !== undefined) {
     const i = +e.target.dataset.ev, n = N(), x = S.notices[n.id].tasks[i], files = [...e.target.files];
     Promise.all(files.map(f => new Promise(res => {
@@ -573,6 +713,12 @@ function onTaskChange(e) {
 function onTaskClick(e) {
   const n = N(), t = S.notices[n.id].tasks, el = e.target;
   const ij = s => s.split(':').map(Number);
+  const ak = e.target.closest('[data-ask]'); if (ak) { const id = ak.dataset.ask; if (ASK.open.has(id)) ASK.open.delete(id); else { ASK.open.add(id); if (aiOn()) setTimeout(() => runAi(id, '왜 이 사업장은 이 조치를 해야 하나요? 관련 고시와 법규 근거를 들어 설명해 주세요.'), 50); } return renderAna(); }
+  const acl = e.target.closest('[data-askclose]'); if (acl) { ASK.open.delete(acl.dataset.askclose); return renderAna(); }
+  const aq = e.target.closest('[data-askq]'); if (aq) { const box = aq.closest('.askbox'), q = box.querySelector('.askq').value.trim(); if (!q) return toast('질문을 입력하세요'); box.querySelector('.askq').value = '';
+    if (!aiOn()) { box.querySelector('.aiout').insertAdjacentHTML('beforeend', `<div class="small" style="margin-top:6px"><b>Q.</b> ${esc(q)}<br><span class="muted">생성형 AI가 연결되지 않아 자유 질문에는 답할 수 없습니다. 아래 근거 자료를 확인하거나, 상단 'AI 설정'에서 Claude 또는 사내 LLM을 연결하세요.</span></div>`); box.querySelector('.askev').open = true; return; }
+    return runAi(aq.dataset.askq, q); }
+  const cf = e.target.closest('[data-aicfg]'); if (cf) { e.preventDefault(); return openAiCfg(); }
   if (el.dataset.rule) { e.preventDefault(); const k = (n.규칙제안 || []).findIndex(q => q.규칙 === t[+el.closest('tr').dataset.i]?.규칙키); return openReview(`P|${n.id}|${Math.max(0, k)}`); }
   if (el.dataset.evdel) { e.preventDefault(); const [i, j] = el.dataset.evdel.split(':').map(Number); const v = t[i].증빙.splice(j, 1)[0]; log(`${t[i].id} 증빙 삭제: ${v.이름}`); save(); return renderAna(); }
   if (el.dataset.del) { const x = t.splice(+el.dataset.del, 1)[0]; log(`${n.id} 조치 삭제: ${x.대상}`); save(); return renderAna(); }
@@ -702,7 +848,7 @@ function renderKX() {
     .map(([k, v]) => `<span><i style="background:${TYPE_COLOR[k]}"></i>${v}</span>`).join('') +
     '<span style="margin-left:10px">선: <b style="color:#C9822B">개정</b> · <b style="color:#2D5FA8">근거</b> · <b style="color:#3A9B6A">연결</b> · <b style="color:#6B5BA8">인용</b> · <b style="color:#B5487A">해석·적용</b> · <b style="color:#9AA5B4">위임(점선)</b></span>';
   box.innerHTML = `
-    <div class="row between"><div><h2 id="kxTitle">지식 연결도 · 지식 편집</h2><p class="desc" style="margin:0">노드를 누르면 연결된 지식이 강조되고, 아래에서 내용과 연결 관계를 바로 수정할 수 있습니다. 판정 규칙은 수정하면 새 버전으로 저장되고 이전 버전은 이력으로 남습니다.</p></div>
+    <div class="row between"><div><h2 id="kxTitle">지식 연결도 · 지식 편집</h2></div>
       <div class="row"><input type="text" id="kxQ" placeholder="지식 검색 (예: 표시, 30일, 암모니아)" value="${esc(ED.q)}" style="width:240px"><button class="btn sm" style="background:${TYPE_COLOR.해석}" data-act="new-int">+ 해석·판단</button><button class="btn blue sm" data-act="new">+ 새 점검 규칙</button></div></div>
     <div class="legend" style="margin:10px 0 4px;flex-wrap:wrap">${legend}</div>
     <div class="scroll" id="kxGraph" style="border:1px solid var(--line);border-radius:10px;background:#FBFCFE;padding:6px">${graphSvg()}</div>
@@ -866,7 +1012,7 @@ function qtyHtml() {
       <td class="num">${edit ? `<input type="number" data-cas="${m.CAS}" value="${dv}" style="width:70px">` : `<b>${q.하위}</b>`} t</td><td class="num">${q.상위} t</td><td class="small">${mul}</td><td class="small">${hist || '-'}</td></tr>`; }).join('');
   return `<div class="result" style="background:#fff;border-color:${edit ? 'var(--orange)' : 'var(--line)'}">
     <div class="row between"><h3 style="margin:0">물질별 규정수량 표 <span class="pill gray">기준표</span></h3>${edit ? '<span class="pill orange">편집 중</span>' : '<button class="btn blue" data-act="edit">✎ 수정하기</button>'}</div>
-    <p class="muted" style="margin:6px 0">화학물질안전원 고시(유해화학물질별 수량기준)의 값입니다. 배수 계산·계획서 대상 판정·비상대응 등급에 사용됩니다.</p>
+    
     <div class="scroll"><table><tr><th>물질</th><th>CAS</th><th>사업장</th><th class="num">하위 규정수량</th><th class="num">상위</th><th>사업장별 배수</th><th>개정 이력</th></tr>${rows}</table></div>
     ${edit ? `<div class="row" style="align-items:flex-end;margin-top:8px"><label class="field"><span>적용 시행일</span><input type="date" id="kxQtyDate" value="${ED.draft.시행일}"></label><label class="field"><span>승인자</span><select id="kxQtyBy">${personOpts('김지훈', 'HQ')}</select></label>
       <button class="btn green" data-act="qty-save">바뀐 값 저장</button><button class="btn ghost" data-act="cancel">취소</button></div>` : ''}
@@ -892,7 +1038,7 @@ function artHtml(id) {
   const vs = K.조문[id];
   const docs = SITES.flatMap(s0 => s0.문서.filter(d => docLinks(d).includes(id)).map(d => `${s0.약칭} ${d.이름}`));
   return `<div class="result" style="background:#fff"><h3 style="margin:0 0 4px">${esc(label(vs[0]))} ${esc(vs[0].제목)} <code>${id}</code></h3>
-    <p class="muted small" style="margin:0 0 8px">${esc(vs[0].법령명)} · 법령 원문은 법제처 수집 데이터라 화면에서 직접 고치지 않고, 개정 감지 시 새 버전으로 추가됩니다.</p>
+    <p class="muted small" style="margin:0 0 8px">${esc(vs[0].법령명)}</p>
     ${vs.map((a, i) => `<div class="cite" style="${a.폐지일 ? 'opacity:.6' : ''}"><b>시행 ${a.시행일}${a.폐지일 ? ` ~ ${a.폐지일} (이력)` : ''}</b> <code>${a.해시}</code><br>${i ? cmpBox(vs[i - 1].내용, a.내용, '이전', '개정').replace('class="cmp diff"', 'class="cmp diff" style="margin-top:6px"') : esc(a.내용)}</div>`).join('')}
     <p class="small" style="margin:8px 0 0">이 조문을 인용하는 사업장 문서 <b>${docs.length}</b>건${docs.length ? `: <span class="muted">${esc(docs.slice(0, 6).join(', '))}${docs.length > 6 ? ' 외' : ''}</span>` : ''}</p></div>
     ${card('연결된 지식 (이 조문이 바뀌면 영향받는 대상)', nbChips('A:' + id))}`;
@@ -901,7 +1047,7 @@ function artHtml(id) {
 function docHtml(t) {
   const d0 = SITES[0].문서.find(d => d.유형 === t), links = docLinks(d0);
   return `<div class="result" style="background:#fff"><h3 style="margin:0 0 4px">${esc(d0.이름)} <span class="pill gray">사업장 문서</span></h3>
-    <p class="muted small" style="margin:0 0 8px">문서가 인용하는 조문을 연결해 두면, 그 조문이 개정될 때 AI가 이 문서를 수정 대상으로 찾습니다. 연결은 바로 추가·삭제할 수 있습니다.</p>
+    
     <b class="small">연결 조문</b><div class="chips">${links.map(c => c === 'QTY' ? `<span class="chip"><b data-node="QTY" style="cursor:pointer">수량기준 고시</b> <a href="#" data-act="dl-del" data-v="QTY" style="color:var(--red);text-decoration:none">✕</a></span>` : citeChip(c, 'dl-del')).join('')}
       ${citeSelect('kxNewCite', links)}<button class="btn ghost sm" data-act="dl-add">연결</button></div>
     <table style="margin-top:8px"><tr><th>사업장</th><th>문서 번호</th><th>개정</th><th>담당</th></tr>${SITES.map(s0 => { const d = s0.문서.find(x => x.유형 === t); return d ? `<tr><td>${sitePill(s0.id)}</td><td>${esc(d.번호)}</td><td class="small">${esc(d.개정)}</td><td>${esc(d.담당자)}</td></tr>` : ''; }).join('')}</table></div>
@@ -921,7 +1067,7 @@ function interpHtml(iid) {
   const ruleSel = `<select id="kxIntRule"><option value="">+ 규칙 연결</option>${K.규칙.filter(r => !x.적용규칙.includes(r.id)).map(r => `<option value="${r.id}">${r.id} ${esc(r.이름)}</option>`).join('')}</select>`;
   return `<div class="result" style="background:#fff;border-color:${edit ? 'var(--orange)' : TYPE_COLOR.해석}">
     <div class="row between"><h3 style="margin:0"><span class="pill" style="background:${TYPE_COLOR.해석}">해석·판단</span> ${isNew ? '새 해석·판단 등록' : `${esc(x.id)} ${esc(x.제목)}`}</h3>${edit ? '<span class="pill orange">편집 중</span>' : '<button class="btn blue" data-act="edit">✎ 수정하기</button>'}</div>
-    <p class="muted small" style="margin:6px 0">법령 문구만으로 판단이 애매한 경우, 기후에너지환경부 유권해석·질의회신이나 컨설턴트 판단을 근거와 함께 지식으로 남깁니다. 판정 규칙과 연결되어 판정 결과 화면에 함께 표시됩니다.</p>
+    
     <div class="kv" style="grid-template-columns:100px 1fr"><b>구분</b><span>${sel('구분', INT_KIND)} ${edit ? '' : ''}</span>
       <b>제목</b><span>${t('제목')}</span><b>질의 (쟁점)</b><span>${ta('질의')}</span><b>판단 (답변)</b><span>${edit ? ta('판단') : `<b>${esc(x.판단)}</b>`}</span>
       <b>출처</b><span>${t('출처')} ${edit ? '<div class="muted small">예: 기후에너지환경부 질의회신 (문서번호, 일자) / 컨설팅본부 검토의견 번호</div>' : ''}</span>
@@ -1210,7 +1356,7 @@ function runJudge() {
       <b>의무 · 미이행 시</b><span>${ruleObl(r.규칙) ? `${oblPill(ruleObl(r.규칙))} ${penHtml(oblOf(ruleObl(r.규칙)))}` : '-'}</span></div>
       <details><summary>근거 조문 원문 보기</summary>${citeHtml(r.근거)}</details>
       ${intOf(r.규칙).length ? `<details open><summary>관련 해석·판단 ${intOf(r.규칙).length}건</summary>${intCards(intOf(r.규칙))}</details>` : ''}</div>`;
-  }).join('') + `<p class="muted small">→ 실제 시스템에서는 이 결과로 변경관리(MOC) 건이 등록되고, 제출 기한이 조치 목록과 담당자 알림에 반영됩니다.</p>`;
+  }).join('') + ``;
 }
 function setPathCG(path, v) { const ks = path.split('.'); let o = CG.후; ks.slice(0, -1).forEach(k => o = o[k]); o[ks[ks.length - 1]] = v; }
 $('cgFac').onchange = () => { $('cgName').dataset.auto = '1'; cgInit(true); };
@@ -1350,7 +1496,7 @@ document.addEventListener('click', e => {
 $('srcClose').onclick = () => $('srcModal').classList.add('hidden');
 $('srcModal').onclick = e => { if (e.target.id === 'srcModal') $('srcModal').classList.add('hidden'); };
 document.addEventListener('click', e => { const p7 = e.target.closest('[data-p7]'); if (p7) { e.preventDefault(); openReview(p7.dataset.p7); } });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') $('srcModal').classList.add('hidden'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('srcModal').classList.add('hidden'); $('aiModal').classList.add('hidden'); } if (e.key === 'Enter' && e.target.classList?.contains('askq')) e.target.parentElement.querySelector('[data-askq]').click(); });
 
 // ================================================================ 의무 분류 (의무 10개 × 세부 업무, 미이행 시 벌칙)
 const OBL_CLR = '#0F766E';
@@ -1388,12 +1534,12 @@ function renderObl() {
     <td><span class="pill ${s0.유형 === '판정형' ? 'navy' : 'line'}" style="font-size:11px">${esc(s0.유형 || '-')}</span></td><td class="small">${esc(s0.근거 || '')}</td><td style="min-width:240px">${penHtml(s0)}</td>
     <td>${st.n ? `<b>${st.ok}</b> / ${st.n}` : `<span style="color:${s0.유형 === '판정형' ? 'var(--red)' : 'var(--sub)'}">${s0.유형 === '판정형' ? '없음' : '-'}</span>`}</td><td><button class="btn ghost sm" data-ob="esub" data-v="${esc(s0.코드)}">편집</button></td></tr>`; };
   box.innerHTML = `<div class="row between"><div><h2 style="margin:0">의무 분류 <span class="muted small">— 화관법 의무 ${act.length}개 · 세부 업무 ${subsAll.length}개</span></h2>
-      <p class="desc" style="margin:4px 0 0">규칙이 있는 세부 업무 <b>${subsCov}/${subsAll.length}</b> · 벌칙 확인 완료 <b>${penOk}/${subsAll.length}</b> · 법규 담당자·컨설턴트가 의무·세부 업무·벌칙을 추가하고 고칠 수 있습니다.</p></div>
+      <p class="desc" style="margin:4px 0 0">규칙이 있는 세부 업무 <b>${subsCov}/${subsAll.length}</b> · 벌칙 확인 완료 <b>${penOk}/${subsAll.length}</b> · 벌칙은 AI 초안 → 컨설턴트 확인</p></div>
       <div class="row"><button class="btn ghost sm" data-ob="toggle">${OB.open ? '접기' : '세부 업무·벌칙 보기'}</button><button class="btn blue sm" data-ob="ntop">+ 의무 추가</button></div></div>
     <div class="chips" style="margin:10px 0 0">${list.map(o => { const st = rstat(o.코드), ss = (o.세부 || []).filter(s0 => s0.상태 !== '폐지'), cov = ss.filter(s0 => rulesOf(s0.코드).length).length;
       return `<span class="chip" style="${o.상태 === '폐지' ? 'opacity:.5' : ''};border-color:${st.n ? OBL_CLR : 'var(--line)'}" title="${esc(o.설명 || '')}"><b style="color:${OBL_CLR}">${esc(o.코드)}</b> ${esc(o.이름)} <b style="color:${st.n ? (st.ok === st.n ? 'var(--green)' : 'var(--orange)') : 'var(--red)'}">${st.n ? `규칙 ${st.ok}/${st.n}` : '규칙 없음'}</b> <span class="small muted">세부 ${cov}/${ss.length}</span>${o.사용자 ? ' <span class="small muted">추가</span>' : ''}</span>`; }).join('')}</div>
     ${OB.open ? `<div class="scroll" style="margin-top:10px"><table><tr><th>코드</th><th>의무 · 세부 업무</th><th>유형</th><th>대표 근거</th><th>미이행 시 벌칙</th><th>규칙 (확정/전체)</th><th></th></tr>${list.map(o => `<tr style="background:#EEF6F5;${o.상태 === '폐지' ? 'opacity:.5' : ''}"><td><b style="color:${OBL_CLR}">${esc(o.코드)}</b></td><td colspan="4"><b>${esc(o.이름)}</b>${o.사용자 ? ` <span class="pill gray" style="font-size:10.5px">추가 · ${esc(o.등록자 || '')}</span>` : ''}${o.상태 === '폐지' ? ' <span class="pill gray">폐지</span>' : ''} <span class="small muted">${esc(o.설명 || '')}</span></td><td>${(s => s.n ? `<b>${s.ok}</b> / ${s.n}` : '-')(rstat(o.코드))}</td><td style="white-space:nowrap"><button class="btn ghost sm" data-ob="etop" data-v="${esc(o.코드)}">편집</button> <button class="btn ghost sm" data-ob="nsub" data-v="${esc(o.코드)}">+ 세부</button></td></tr>` + (o.세부 || []).map(s0 => subRow(o, s0)).join('')).join('')}</table>
-      <p class="muted small" style="margin:6px 0 0">벌칙은 AI 초안입니다. 컨설턴트가 최신 벌칙·과태료 별표(조문·금액)로 확인한 뒤 편집에서 '확인 완료'로 바꾸세요. 판정형 세부 업무에 규칙이 없으면 빨간색으로 표시합니다.</p></div>` : ''}
+      </div>` : ''}
     ${e ? oblForm(e) : ''}`;
 }
 function oblForm(e) {
@@ -1489,7 +1635,7 @@ function propImpact(n, i, 값, 시행일) {
   if (p.종류 === '기한일수') {
     const rows = SITES.flatMap(site => site.변경관리.filter(m => m.상태 === '진행').map(m => ({ site, m, now: mocDueK(K, m), aft: mocDueK(K1, m) })));
     return `<table><tr><th>사업장</th><th>변경관리</th><th>변경완료 예정</th><th>현재 공식 기한</th><th>확정 후 공식 기한</th></tr>${rows.map(x => `<tr><td>${sitePill(x.site.id)}</td><td>${esc(x.m.id)} ${esc(x.m.이름)}</td><td>${esc(x.m.변경완료_예정일)}</td><td>${x.now || '-'}</td><td>${x.aft && x.aft !== x.now ? `<b style="color:var(--red)">${x.aft}</b> <span class="small">(${dday(x.aft)})</span>` : (x.aft || '-') + ' <span class="small muted">변동 없음</span>'}</td></tr>`).join('')}</table>
-      <p class="muted small" style="margin:4px 0 0">변경완료 예정일이 적용 시행일(${esc(시행일)}) 이후인 건만 새 기한이 적용됩니다. 확정하면 ④ 조치 기한이 자동으로 다시 계산됩니다.</p>`;
+      <p class="muted small" style="margin:4px 0 0">변경완료 예정일이 ${esc(시행일)} 이후인 건만 새 기한 적용 · 확정 시 ④ 기한 자동 재계산</p>`;
   }
   if (p.종류 === '수량기준') {
     const rows = SITES.flatMap(site => site.물질.filter(m => m.CAS === p.CAS).map(m => {
@@ -1519,7 +1665,7 @@ function renderPropDetail(key) {
       <p class="muted" style="margin:6px 0">${esc(p.설명)}</p>
       <div class="kv"><b>감지 고시</b><span>${esc(n.제목)}</span><b>공포·시행</b><span>공포 ${esc(n.공포일)} · 시행 ${esc(n.시행일)} · 감지 ${esc(n.감지일)} (${esc(n.감지경로)})</span>
         <b>미이행 시 벌칙</b><span>${ruleObl(p.규칙) ? `${oblPill(ruleObl(p.규칙))} ${penHtml(oblOf(ruleObl(p.규칙)))}` : '-'}</span>
-        <b>확정 전 판정</b><span>기존 <b>확정 규칙</b>으로 공식 판정합니다. 이 변경안은 ①④⑦에서 <b style="color:var(--orange)">권고 일정</b>(더 이른 기한)으로만 표시됩니다.${linked.length ? ` 현재 권고 표시 중인 조치 ${linked.length}건.` : ''}${!locked && d <= 60 ? ` <b style="color:var(--red)">시행 ${d >= 0 ? 'D-' + d : '경과'} — 확정이 필요합니다.</b>` : ''}</span></div>
+        <b>확정 전 판정</b><span>기존 확정 규칙으로 판정 · 이 변경안은 <b style="color:var(--orange)">권고 일정</b>으로만 표시.${linked.length ? ` 현재 권고 표시 중인 조치 ${linked.length}건.` : ''}${!locked && d <= 60 ? ` <b style="color:var(--red)">시행 ${d >= 0 ? 'D-' + d : '경과'} — 확정이 필요합니다.</b>` : ''}</span></div>
     </div>
     <div class="result" style="background:#fff"><h3>바뀐 조문 (신·구)</h3>${n.변경조문.map(c => `<div style="margin-bottom:10px"><div class="row" style="margin-bottom:4px"><b style="color:var(--navy)">${esc(c.조문)}</b><span class="muted">${esc(c.제목)}</span>${srcBtn(c.id)}</div>${cmpBox(c.구, c.신, '개정 전', `개정 후 (시행 ${n.시행일})`)}</div>`).join('')}</div>
     <div class="result" style="background:#fff"><h3>AI가 추천한 규칙 변경</h3>
@@ -1584,7 +1730,7 @@ function renderRvDetail() {
     <div class="result" style="background:#fff"><h3>근거 원문 (고시·법령) <span class="muted small">— 📄 원문 페이지를 누르면 원본 문서의 해당 쪽을 표시</span></h3>${citeHtml(cite0(v.근거))}</div>
     <div class="result ${issues.length && !allChecked ? 'hit' : ''}" style="${issues.length && !allChecked ? '' : 'background:#fff'}"><h3>쟁점·확인 필요 사항 ${issues.length ? `<span class="muted small">(${issues.filter((_, i) => rv.체크?.[i]).length}/${issues.length} 확인)</span>` : ''}</h3>
       ${issues.length ? issues.map((t, i) => `<label class="chk" style="align-items:flex-start"><input type="checkbox" data-rvchk="${i}" ${rv.체크?.[i] ? 'checked' : ''} ${locked ? 'disabled' : ''}> <span>${esc(t)}</span></label>`).join('') : '<p class="muted small">AI가 표시한 쟁점이 없습니다.</p>'}
-      <p class="muted small" style="margin:6px 0 0">모든 쟁점을 확인해야 확정할 수 있습니다. 해석이 필요하면 ⑤ 지식 편집에서 <b>해석·판단</b>을 등록해 이 규칙에 연결하세요.</p></div>
+      </div>
     <div class="result" style="background:#fff"><h3>검증 사례 (지금 엔진으로 실행)</h3>
       ${cases.length ? `<table><tr><th>사례</th><th>입력</th><th>기대</th><th>실제</th><th>결과</th></tr>${cases.map(({ c, act, ok }) => `<tr><td class="small">${esc(c.설명)}</td><td class="small"><code>${esc(JSON.stringify(c.입력))}</code></td><td class="small">${esc(JSON.stringify(c.기대))}</td><td class="small">${esc(Object.keys(c.기대).map(k => `${k}: ${act[k] ?? '-'}`).join(', '))}</td><td><span class="pill ${ok ? 'green' : 'red'}">${ok ? '통과' : '불일치'}</span>${r.유형 === '수량판정' ? `<br><button class="btn ghost sm srcbtn" data-src="${act.표 === '별표3' ? 'QTY-B3-일반' : 'QTY-B2-일반'}" data-extra="${encodeURIComponent('<p><b>이 사례에 해당하는 원문 행</b> (노란 행이 적용된 값)</p>' + qtyRowsHtml(c.입력.CAS, act.행))}">📄 별표 원문 행</button>` : ''}</td></tr>`).join('')}</table>` : '<p class="muted small">등록된 검증 사례가 없습니다.</p>'}
       ${intOf(r.id).length ? `<h3>연결된 해석·판단</h3>${intCards(intOf(r.id))}` : ''}</div>
@@ -1677,4 +1823,5 @@ $('baseDate').onchange = render;
 $('siteSel').innerHTML = `<option value="ALL">전체 (${SITES.length}곳)</option>` + SITES.map(x => `<option value="${x.id}">${esc(x.사업장)}</option>`).join('');
 $('siteSel').onchange = e => setSite(e.target.value);
 $('resetBtn').onclick = e => { e.preventDefault(); if (confirmBox('시연 데이터를 처음 상태로 되돌릴까요? (이 브라우저에 저장된 분석·승인·이력이 삭제됩니다)')) { seed(); K = knowledge(); render(); toast('시연 데이터를 초기화했습니다'); } };
+$('aiCfgBtn').onclick = e => { e.preventDefault(); openAiCfg(); };
 render();

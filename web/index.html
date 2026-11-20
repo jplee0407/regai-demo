@@ -162,7 +162,7 @@
     <h1>법규 개정 영향 진단 및 조치계획 자동 수립 · 시연</h1>
     <p id="buildinfo">화학물질관리법 · 시행규칙 발췌 기반 · 가상 사업장 데이터</p>
   </div>
-  <div class="who">로그인: 김지훈 (본사 환경안전팀장) · 가상 계정<br><a href="#" id="resetBtn" style="color:#C9D7EC">시연 데이터 초기화</a></div>
+  <div class="who">로그인: 김지훈 (본사 환경안전팀장) · 가상 계정<br><a href="#" id="aiCfgBtn" style="color:#C9D7EC">AI 설정</a> · <a href="#" id="resetBtn" style="color:#C9D7EC">시연 데이터 초기화</a></div>
 </header>
 <div class="wrap">
   <div class="bar">
@@ -178,7 +178,7 @@
     </div>
     <div class="row"><label class="date">사업장 <select id="siteSel"></select></label><label class="date">기준일 <input type="date" id="baseDate"></label></div>
   </div>
-  <div class="note">시연용입니다. 고시·개정 내용과 사업장·물질·수치는 모두 가상이며, 조문은 발췌·요약본입니다. 법정 의무 판정은 AI가 아니라 전문가가 승인한 규칙으로 수행하고, AI는 영향 목록·문서 수정안·규칙 변경안을 제안합니다. 입력한 내용은 이 브라우저에만 저장됩니다.</div>
+  <div class="note">시연용 가상 데이터 (고시 개정·사업장·수치 가상, 조문 발췌) · 입력 내용은 이 브라우저에만 저장</div>
 
   <!-- ① 사업장 현황 -->
   <section id="t1">
@@ -188,11 +188,11 @@
       <div class="card"><h2>유해화학물질 영업허가</h2><div class="scroll"><table id="permitTable"></table></div></div>
       <div class="card"><h2>화학사고예방관리계획서</h2><div class="kv" id="planInfo"></div></div>
     </div>
-    <div class="card"><h2>취급 유해화학물질</h2><p class="desc">규정수량은 지식 기반의 수량기준 표에서 기준일에 시행 중인 값을 사용합니다. 승인된 개정이 있으면 시행 예정 값을 함께 표시합니다.</p><div class="scroll"><table id="chemTable"></table></div></div>
+    <div class="card"><h2>취급 유해화학물질</h2><div class="scroll"><table id="chemTable"></table></div></div>
     <div class="card"><h2>취급시설 · 정기검사</h2><p class="desc" id="facDesc"></p><div class="scroll"><table id="facTable"></table></div></div>
     <div class="grid2" style="grid-template-columns:1fr 1fr">
-      <div class="card"><h2>진행 중 변경관리 (MOC)</h2><p class="desc">제출 기한은 <b>②에서 확정된 규칙</b>으로 계산합니다(공식, 변경완료 예정일에 시행 중인 버전). 확정 전 개정안이 더 이른 기한을 요구하면 <b style="color:var(--orange)">권고</b>로 함께 표시합니다.</p><div class="scroll"><table id="mocTable"></table></div></div>
-      <div class="card"><h2>사내 관리 문서</h2><p class="desc">관련 조문이 연결되어 있어 개정 시 AI가 수정 대상 문서를 찾습니다.</p><div class="scroll"><table id="docTable"></table></div></div>
+      <div class="card"><h2>진행 중 변경관리 (MOC)</h2><p class="desc">공식 기한은 확정 규칙 기준 · <b style="color:var(--orange)">권고</b>는 미확정 개정안 기준</p><div class="scroll"><table id="mocTable"></table></div></div>
+      <div class="card"><h2>사내 관리 문서</h2><div class="scroll"><table id="docTable"></table></div></div>
     </div>
   </section>
 
@@ -208,7 +208,7 @@
       </div>
       <div class="card">
         <h2>새로 감지된 법령·고시</h2>
-        <p class="desc">조문 해시가 바뀐 개정만 표시합니다. 영향도 분석을 누르면 AI가 우리 사업장 정보와 대조해 조치 목록을 만듭니다.</p>
+        
         <div id="noticeList"></div>
       </div>
     </div>
@@ -230,30 +230,30 @@
       <div class="row"><b>고시 선택</b> <select id="selN4" style="max-width:640px"></select></div>
       <div id="nHead4" style="margin-top:10px"></div>
     </div>
-    <div class="card"><h2>신·구 조문 대비</h2><p class="desc">바뀐 부분은 <span class="diff"><del>삭제</del> <ins>추가</ins></span>로 표시합니다.</p><div id="cmpOut"></div></div>
-    <div class="card"><h2>AI 규칙 반영 제안 → 전문가 확인·승인</h2><p class="desc">AI가 바뀐 조문에서 판정 값의 변화를 뽑아 제안합니다. 전문가가 값을 확인·수정하고 승인하면 새 규칙 버전이 시행일부터 적용되고, 이전 버전은 이력으로 남습니다.</p><div id="propOut"></div></div>
+    <div class="card"><h2>신·구 조문 대비</h2><div id="cmpOut"></div></div>
+    <div class="card"><h2>AI 규칙 반영 제안 → 전문가 확인·승인</h2><div id="propOut"></div></div>
     <div class="card" id="kx"></div>
-    <div class="card hidden" id="yamlBox"><h2>저장소에 들어갈 형태 (YAML)</h2><pre id="yamlOut"></pre><p class="muted">운영 시 이 변경은 Pull Request로 올라가 정답셋 회귀 테스트를 거친 뒤 병합됩니다. (⑧ GitHub 반영 흐름)</p></div>
+    <div class="card hidden" id="yamlBox"><h2>저장소에 들어갈 형태 (YAML)</h2><pre id="yamlOut"></pre></div>
   </section>
 
   <!-- ⑥ 대시보드 -->
   <section id="t5" class="hidden">
     <div class="grid6" id="dashKpi"></div>
-    <div class="card" style="margin-top:14px"><h2>사업장별 · 고시별 진행현황</h2><p class="desc">같은 고시라도 사업장마다 영향 범위와 진행 속도가 다릅니다. 지식(규칙) 반영은 본사에서 한 번 하면 전 사업장에 적용됩니다.</p><div class="scroll"><table id="matrixTable"></table></div></div>
+    <div class="card" style="margin-top:14px"><h2>사업장별 · 고시별 진행현황</h2><div class="scroll"><table id="matrixTable"></table></div></div>
     <h3 style="color:var(--navy);margin:18px 0 8px">고시별 진행현황</h3>
     <div class="grid3" id="dashCards"></div>
     <div class="grid2" style="grid-template-columns:1fr 1fr;margin-top:14px">
       <div class="card"><h2>담당자별 현황</h2><div class="scroll"><table id="ownerTable"></table></div></div>
       <div class="card"><h2>마감 임박·경과 조치 (30일 이내)</h2><div class="scroll"><table id="dueTable"></table></div></div>
     </div>
-    <div class="card"><h2>최근 이력</h2><p class="desc">분석·담당자 변경·승인 등 모든 처리 이력을 남깁니다 (감사 추적).</p><div class="scroll"><table id="logTable"></table></div></div>
+    <div class="card"><h2>최근 이력</h2><div class="scroll"><table id="logTable"></table></div></div>
   </section>
 
   <!-- ⑦ 지식 기반·판정 -->
   <section id="t6" class="hidden">
     <div class="card">
       <h2>판정 시험: 시설 변경 계획</h2>
-      <p class="desc">시설을 고르면 현재 정보가 표시됩니다. <b>변경 후</b> 칸에 계획을 입력하면 현재와 비교해 변경 유형(용량 증가·물질 추가·위험 증가·위치 변경·작성수준 상향 등)을 자동으로 찾고, 기준일에 시행 중인 규칙으로 계획서 제출 대상과 기한을 판정합니다.</p>
+      <p class="desc">시설 선택 → 변경 후 값 입력 → 비교·판정</p>
       <div class="row" style="align-items:flex-end">
         <label class="field"><span>대상 시설 <span class="muted" style="font-weight:400">(상단 사업장 선택 기준)</span></span><select id="cgFac" style="min-width:280px"></select></label>
         <label class="field"><span>변경 건명</span><input type="text" id="cgName" placeholder="예: T-105 용제 저장탱크 증설" style="width:280px"></label>
@@ -268,21 +268,21 @@
     </div>
     <div class="card"><h2>판정 결과</h2><p class="desc" id="judgeHint">위에서 변경 후 값을 입력하고 "변경 내용 비교·판정"을 누르세요.</p><div id="cgDiff"></div><div id="judgeOut"></div></div>
     <div class="grid2">
-      <div class="card"><h2>판정 시험: 용기·포장 표시</h2><p class="desc">현재 라벨에 있는 항목을 체크하세요. (현장 사진 판독 결과가 들어오는 자리)</p><div id="labelChecks"></div><button class="btn" id="labelBtn">점검하기</button></div>
+      <div class="card"><h2>판정 시험: 용기·포장 표시</h2><div id="labelChecks"></div><button class="btn" id="labelBtn">점검하기</button></div>
       <div class="card"><h2>점검 결과</h2><div id="labelOut" class="desc">점검하기를 누르세요.</div></div>
     </div>
-    <div class="card"><h2>판정 시험: 물질 규정수량 구간 (고시 원문 기준표)</h2><p class="desc">「유해화학물질의 규정수량에 관한 규정」 별표 2·3 (물질 2,497행)에서 규정수량을 찾아 구간을 판정합니다. 규칙 R-QTY-1.</p>
+    <div class="card"><h2>판정 시험: 물질 규정수량 구간 (고시 원문 기준표)</h2><p class="desc">규정수량 규정 별표 2·3 기준 · R-QTY-1</p>
       <div class="row" style="align-items:flex-end"><label class="field"><span>물질명 또는 CAS</span><input type="text" id="qjQ" list="qjList" value="7647-01-0" style="width:260px"><datalist id="qjList"></datalist></label>
         <label class="field"><span>함량 (%)</span><input type="number" id="qjPct" value="35" style="width:80px"></label>
         <label class="field"><span>성상</span><select id="qjState"><option>액체</option><option>기체</option><option>고체</option></select></label>
         <label class="field"><span>최대보유량 (톤, 사업장 합계)</span><input type="number" id="qjQty" value="180" style="width:100px"></label>
         <div class="field"><button class="btn" id="qjBtn">판정하기</button></div></div>
       <div id="qjOut"></div></div>
-    <div class="card"><h2>판정 규칙</h2><p class="desc">규칙은 버전과 시행일을 갖고, 기준일에 시행 중인 버전으로만 판정합니다.</p><div id="rulesOut"></div></div>
+    <div class="card"><h2>판정 규칙</h2><div id="rulesOut"></div></div>
     <div class="card"><h2>물질별 규정수량 (수량기준 표)</h2><div class="scroll"><table id="qtyTable"></table></div></div>
-    <div class="card"><h2>조문 (시행일별 버전)</h2><p class="desc">조문 내용의 해시값이 바뀌면 개정으로 감지합니다.</p><div class="scroll"><table id="lawTable"></table></div></div>
+    <div class="card"><h2>조문 (시행일별 버전)</h2><div class="scroll"><table id="lawTable"></table></div></div>
     <div class="card"><h2>지적·조치 가이드</h2><div class="scroll"><table id="guideTable"></table></div></div>
-    <div class="card"><h2>정답셋 회귀 테스트 (브라우저에서 실행)</h2><p class="desc">규칙을 바꾸면 기대값과 달라지는 사례가 바로 드러납니다. 의도한 변화면 정답셋을 함께 갱신합니다.</p><div class="scroll"><table id="testTable"></table></div></div>
+    <div class="card"><h2>정답셋 회귀 테스트 (브라우저에서 실행)</h2><div class="scroll"><table id="testTable"></table></div></div>
   </section>
 
   <!-- ② 규칙 검토·확정 -->
@@ -290,7 +290,7 @@
     <div class="grid6" id="rvKpi"></div>
     <div class="card" id="oblCard" style="margin-top:14px"></div>
     <div class="card" style="margin-top:14px">
-      <div class="row between"><div><h2>규칙 검토·확정</h2><p class="desc" style="margin:0">AI가 만든 규칙 초안과, ③ 모니터링으로 감지된 고시의 <b>개정 반영 대기(AI 추천)</b> 변경안을 컨설턴트·전문가가 확인합니다. 공식 판정은 <b>확정</b>된 규칙만 사용하며, 확정 전 변경안은 권고 일정으로만 표시됩니다. 확정하면 관련 조치 기한이 자동으로 다시 계산됩니다.</p></div>
+      <div class="row between"><div><h2>규칙 검토·확정</h2><p class="desc" style="margin:0">공식 판정은 <b>확정</b> 규칙만 사용 · 미확정 개정안은 권고 일정으로만 표시</p></div>
         <div class="row"><label class="small">묶어 보기 <select id="rvGroup"><option value="의무">의무별</option><option value="고시">출처 고시별</option></select></label><label class="small">정렬 <select id="rvSort"><option value="최신">고시일 최신순</option><option value="오래된">고시일 오래된순</option><option value="코드">의무 코드·이름순</option></select></label><select id="rvFilter"><option value="">전체 상태</option><option>AI 추천</option><option>AI 초안</option><option>검토 중</option><option>수정 요청</option><option>확정</option><option>반려</option></select><button class="btn ghost sm" id="rvExport">확정 규칙 내보내기 (JSON)</button></div></div>
       <div class="grid2" style="grid-template-columns:300px 1fr;margin-top:12px">
         <div id="rvList" style="max-height:780px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px"></div>
@@ -303,7 +303,7 @@
   <section id="t7" class="hidden">
     <div class="card">
       <h2>법령이 바뀌면 이렇게 반영됩니다</h2>
-      <p class="desc">GitHub 기능이 그대로 지식 갱신 절차가 됩니다. 아래 링크로 실제 동작을 확인할 수 있습니다.</p>
+      <p class="desc">운영 시 지식 갱신 절차</p>
       <div class="flow" id="flow"></div>
     </div>
     <div class="card">
@@ -319,6 +319,8 @@
   </section>
 </div>
 <div class="toast" id="toast"></div>
+<div id="aiModal" class="hidden" style="position:fixed;inset:0;background:rgba(15,27,51,.55);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:12px;max-width:640px;width:100%;padding:16px 18px"><div class="row between"><b style="color:var(--navy)">AI 설정 — 답변 엔진</b><button class="btn ghost sm" onclick="document.getElementById('aiModal').classList.add('hidden')">닫기</button></div><div id="aiBody" style="margin-top:10px"></div></div></div>
 <div id="srcModal" class="hidden" style="position:fixed;inset:0;background:rgba(15,27,51,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px">
   <div style="background:#fff;border-radius:12px;width:min(1100px,100%);max-height:94vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3)">
     <div class="row between" style="padding:12px 16px;border-bottom:1px solid var(--line)"><div><b id="srcTitle" style="color:var(--navy)"></b><div class="muted small" id="srcSub"></div></div>
