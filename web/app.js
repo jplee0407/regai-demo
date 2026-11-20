@@ -18,7 +18,7 @@ const sitePill = id => `<span class="pill ${id === 'HQ' ? 'gray' : 'navy'}" styl
 const ST = ['대기', '진행 중', '완료'];
 
 // ---------------------------------------------------------------- 상태 저장 (브라우저 localStorage)
-const KEY = 'regai-demo-v5';
+const KEY = 'regai-demo-v6';
 const nowStr = () => new Date().toLocaleString('sv-SE').slice(0, 16);
 let S;
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* 저장 불가 환경 */ } }
@@ -169,7 +169,7 @@ function analyze(n) {
 
 // ---------------------------------------------------------------- 초기 상태 (시연용: 일부 고시는 이미 진행 중)
 function seed() {
-  S = { v: 5, review: {}, notices: {}, approvals: [], prop: {}, log: [], checked: null };
+  S = { v: 6, review: {}, notices: {}, approvals: [], prop: {}, log: [], checked: null };
   for (const n of NOTICES.filter(n => n.초기상태)) {
     const st = n.초기상태;
     (n.규칙제안 || []).forEach((p, i) => { if (!st.규칙승인) return; S.prop[`${n.id}:${i}`] = '승인'; S.approvals.push({ notice: n.id, idx: i, 규칙: p.규칙, 종류: p.종류, 값: p.제안, CAS: p.CAS, 시행일: p.시행일, 근거: p.근거, 승인자: st.승인자, 일시: st.분석일 + ' 15:00', 의견: '개정 조문과 일치 확인' }); });
@@ -187,6 +187,7 @@ function seed() {
       else if (k < ((st.완료비율 || 0) + (st.진행비율 || 0)) * 10) t.상태 = '진행 중';
       if (t.규칙키 && st.규칙승인) t.상태 = '완료';
       if (t.상태 === '완료' && t.수정안) t.수정안.forEach(r => { r.채택 = '채택'; });
+      if (t.상태 === '완료') t.증빙 = [{ 이름: `${t.id}_${t.구분 === '문서' ? '개정문서' : t.구분 === '교육' ? '교육결과' : '조치결과'}.pdf`, 크기: 0, 일시: st.분석일 + ' 17:00', 등록자: t.담당자, 샘플: true }];
     });
     S.notices[n.id] = { 분석일: st.분석일, tasks };
     S.log.push({ t: st.분석일 + ' 09:10', who: 'AI', msg: `${n.id} 영향도 분석 — 조치 ${tasks.length}건 제안` });
@@ -196,7 +197,7 @@ function seed() {
   save();
 }
 try { S = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { S = null; }
-if (!S || S.v !== 5) seed();
+if (!S || S.v !== 6) seed();
 K = knowledge();
 
 function nstate(n) {
@@ -404,13 +405,13 @@ function renderAna() {
   <div class="card">
     <div class="row between"><div><h2>영향 분석 결과 · 조치 목록</h2><p class="desc" style="margin:0">분석일 ${s.분석일} · AI 제안 ${t.filter(x => x.출처 === 'AI').length}건 · 직접 추가 ${t.filter(x => x.출처 !== 'AI').length}건 · 담당자가 AI 추천을 확인해 조치 대상·비대상을 판단합니다. 담당자와 기한은 바로 바꿀 수 있습니다.</p></div>
       <div class="row noprint">${jw ? `<button class="btn blue sm" id="bulkBtn">확인 전 ${jw}건 모두 조치 대상</button>` : ''}<button class="btn ghost sm" id="notifyBtn">담당자 알림 발송</button><button class="btn ghost sm" id="csvBtn">엑셀(CSV) 내보내기</button><button class="btn ghost sm" id="reBtn">다시 분석</button></div></div>
-    <div class="chips"><span class="chip" style="${jw ? 'border-color:var(--orange);background:var(--lorange)' : ''}">판단 대기 <b>${jw}</b></span><span class="chip">조치 대상 <b>${jy}</b></span><span class="chip">비대상 <b>${jn}</b></span><span class="muted" style="align-self:center">|</span>${Object.entries(cnt).map(([k, v]) => `<span class="chip">${esc(k)} <b>${v}</b></span>`).join('')}<span class="chip">문서 수정 제안 <b>${docRecs.length}</b>곳 (채택 ${docRecs.filter(r => r.채택).length})</span></div>
+    <div class="chips"><span class="chip" style="${jw ? 'border-color:var(--orange);background:var(--lorange)' : ''}">판단 대기 <b>${jw}</b></span><span class="chip">조치 대상 <b>${jy}</b></span><span class="chip">비대상 <b>${jn}</b></span><span class="chip" style="${t.filter(x => act(x) && x.상태 === '완료' && !(x.증빙 || []).length).length ? 'border-color:var(--red);background:var(--lred)' : ''}">증빙 누락 <b>${t.filter(x => act(x) && x.상태 === '완료' && !(x.증빙 || []).length).length}</b></span><span class="muted" style="align-self:center">|</span>${Object.entries(cnt).map(([k, v]) => `<span class="chip">${esc(k)} <b>${v}</b></span>`).join('')}<span class="chip">문서 수정 제안 <b>${docRecs.length}</b>곳 (채택 ${docRecs.filter(r => r.채택).length})</span></div>
     <div class="chips">${bySite.map(b => `<span class="chip" data-site="${b.id === 'HQ' ? 'ALL' : b.id}" style="cursor:pointer;${curSite === b.id ? 'border-color:var(--blue);background:var(--bg)' : ''}">${esc(siteName(b.id))} <b>${b.n ? `${b.n}건` : '영향 없음'}</b>${b.n ? ` · 완료 ${b.a ? Math.round(b.d / b.a * 100) : 0}%${b.w ? ` · 판단 대기 ${b.w}` : ''}` : ''}</span>`).join('')}</div>
     <div class="prog"><span class="d" style="width:${ta.length ? done / ta.length * 100 : 0}%"></span><span class="p" style="width:${ta.length ? prog / ta.length * 100 : 0}%"></span></div>
     <div class="legend"><span><i style="background:var(--green)"></i>완료 ${done}</span><span><i style="background:var(--orange)"></i>진행 중 ${prog}</span><span><i style="background:#E3E9F2"></i>대기 ${ta.length - done - prog}</span><span>(비대상 ${jn}건 제외)</span>${over ? `<span style="color:var(--red);font-weight:700">기한 경과 ${over}</span>` : ''}</div>
     <div class="scroll" style="margin-top:12px"><table class="tasks" id="taskTable">
-      <colgroup><col style="width:52px"><col style="width:80px"><col style="min-width:240px"><col style="width:230px"><col style="width:112px"><col style="width:96px"><col style="width:116px"><col style="width:84px"><col class="noprint" style="width:46px"></colgroup>
-      <tr><th>사업장</th><th>구분</th><th>영향 대상 · 내용</th><th>조치</th><th>담당자 판단</th><th>담당자</th><th>기한</th><th>상태</th><th class="noprint"></th></tr>
+      <colgroup><col style="width:52px"><col style="width:80px"><col style="min-width:240px"><col style="width:230px"><col style="width:112px"><col style="width:96px"><col style="width:116px"><col style="width:84px"><col style="width:150px"><col class="noprint" style="width:46px"></colgroup>
+      <tr><th>사업장</th><th>구분</th><th>영향 대상 · 내용</th><th>조치</th><th>담당자 판단</th><th>담당자</th><th>기한</th><th>상태</th><th>완료 증빙</th><th class="noprint"></th></tr>
       ${all.map((x, i) => inSite(x) ? taskRow(x, i) : '').join('')}
     </table></div>
   </div>
@@ -474,9 +475,31 @@ function taskRow(x, i) {
     <td><select data-f="담당자" title="${esc((PEOPLE.find(p => p.이름 === x.담당자) || {}).부서 || '')}">${personOptsShort(x.담당자, x.사업장 === 'HQ' ? null : x.사업장)}</select><div class="small muted">${esc((PEOPLE.find(p => p.이름 === x.담당자) || {}).부서 || '')}</div></td>
     <td><input type="date" data-f="기한" value="${x.기한}"><div class="small ${over ? '' : 'muted'}" style="${over ? 'color:var(--red);font-weight:700' : ''}">${dday(x.기한)}</div></td>
     <td>${na ? '<span class="pill gray">해당 없음</span>' : `<select data-f="상태" ${wait ? 'disabled title="먼저 조치 대상 여부를 확인하세요"' : ''}>${ST.map(s => `<option ${s === x.상태 ? 'selected' : ''}>${s}</option>`).join('')}</select>${wait ? '<div class="small muted">판단 후 진행</div>' : ''}`}</td>
+    <td>${evCell(x, i)}</td>
     <td class="noprint">${x.출처 !== 'AI' ? `<button class="btn ghost sm" data-del="${i}">삭제</button>` : ''}</td></tr>`;
 }
+function evCell(x, i) {
+  if (x.판단 === '비대상') return '<span class="muted small">-</span>';
+  const ev = x.증빙 || [];
+  const list = ev.map((v, j) => `<div class="small" style="display:flex;gap:4px;align-items:center;margin-bottom:2px"><span>📎</span>${v.data ? `<a href="${v.data}" download="${esc(v.이름)}" title="${esc(v.일시)} · ${esc(v.등록자)}">${esc(v.이름)}</a>` : `<span title="${esc(v.일시)} · ${esc(v.등록자)}${v.샘플 ? ' (시연 샘플)' : ' (파일 크기가 커서 목록만 저장)'}">${esc(v.이름)}</span>`}<a href="#" data-evdel="${i}:${j}" class="noprint" style="color:var(--red);text-decoration:none">✕</a></div>`).join('');
+  if (x.상태 !== '완료') return list ? list : '<span class="muted small">완료 시 첨부</span>';
+  return `${list || '<span class="pill red">증빙 필요</span>'}<label class="btn ghost sm noprint" style="margin-top:3px;display:inline-block">+ 첨부<input type="file" multiple data-ev="${i}" style="display:none"></label>`;
+}
 function onTaskChange(e) {
+  if (e.target.dataset.ev !== undefined) {
+    const i = +e.target.dataset.ev, n = N(), x = S.notices[n.id].tasks[i], files = [...e.target.files];
+    Promise.all(files.map(f => new Promise(res => {
+      const meta = { 이름: f.name, 크기: f.size, 일시: nowStr(), 등록자: '김지훈' };
+      if (f.size > 400 * 1024) return res(meta);
+      const fr = new FileReader(); fr.onload = () => res({ ...meta, data: fr.result }); fr.readAsDataURL(f);
+    }))).then(list => {
+      x.증빙 = [...(x.증빙 || []), ...list];
+      log(`${x.id} 완료 증빙 첨부: ${list.map(v => v.이름).join(', ')}`);
+      try { save(); } catch (err) { list.forEach(v => delete v.data); save(); }
+      renderAna(); toast(`증빙 ${list.length}건을 첨부했습니다`);
+    });
+    return;
+  }
   const f = e.target.dataset.f; if (!f) return;
   const i = +e.target.closest('tr').dataset.i, n = N(), x = S.notices[n.id].tasks[i];
   const old = x[f]; x[f] = e.target.value;
@@ -487,11 +510,13 @@ function onTaskChange(e) {
   }
   if (f === '판단사유') { log(`${x.id} 비대상 사유: ${x[f]} (${x.대상})`); save(); return renderAna(); }
   log(`${x.id} ${f} 변경: ${old} → ${x[f]} (${x.대상})`); save(); renderAna();
+  if (f === '상태' && x[f] === '완료' && !(x.증빙 || []).length) toast('완료 처리됨 — 오른쪽 "완료 증빙"에 증빙자료를 첨부하세요');
 }
 function onTaskClick(e) {
   const n = N(), t = S.notices[n.id].tasks, el = e.target;
   const ij = s => s.split(':').map(Number);
   if (el.dataset.rule) { e.preventDefault(); return showTab('t4'); }
+  if (el.dataset.evdel) { e.preventDefault(); const [i, j] = el.dataset.evdel.split(':').map(Number); const v = t[i].증빙.splice(j, 1)[0]; log(`${t[i].id} 증빙 삭제: ${v.이름}`); save(); return renderAna(); }
   if (el.dataset.del) { const x = t.splice(+el.dataset.del, 1)[0]; log(`${n.id} 조치 삭제: ${x.대상}`); save(); return renderAna(); }
   if (el.dataset.adopt || el.dataset.undo || el.dataset.save) {
     const [i, j] = ij(el.dataset.adopt || el.dataset.undo || el.dataset.save), r = t[i].수정안[j];
@@ -507,7 +532,7 @@ function onTaskClick(e) {
   if (el.dataset.edit) { const [i, j] = ij(el.dataset.edit); $(`ed-${i}-${j}`).classList.toggle('hidden'); }
 }
 function exportCsv(n, t) {
-  const rows = [['번호', '사업장', '구분', '대상', '영향', '조치', '담당자 판단', '비대상 사유', '판단자', '담당자', '기한', '상태', '출처', '근거']].concat(t.map(x => [x.id, siteName(x.사업장), x.구분, x.대상, x.영향, x.조치, x.판단, x.판단사유 || '', x.판단자 || '', x.담당자, x.기한, x.판단 === '비대상' ? '해당 없음' : x.상태, x.출처 === 'AI' ? `AI(${Math.round(x.신뢰도 * 100)}%)` : '직접', (x.근거 || []).join(' ')]));
+  const rows = [['번호', '사업장', '구분', '대상', '영향', '조치', '담당자 판단', '비대상 사유', '판단자', '담당자', '기한', '상태', '완료 증빙', '출처', '근거']].concat(t.map(x => [x.id, siteName(x.사업장), x.구분, x.대상, x.영향, x.조치, x.판단, x.판단사유 || '', x.판단자 || '', x.담당자, x.기한, x.판단 === '비대상' ? '해당 없음' : x.상태, (x.증빙 || []).map(v => v.이름).join(' / '), x.출처 === 'AI' ? `AI(${Math.round(x.신뢰도 * 100)}%)` : '직접', (x.근거 || []).join(' ')]));
   const csv = '﻿' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `${n.id}_조치목록.csv`; a.click();
 }
