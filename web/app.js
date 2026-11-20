@@ -132,12 +132,12 @@ function analyze(n) {
     items.push({ 구분: '지식(가이드)', 대상: `지적·조치 가이드 ${g.코드} ${g.지적유형}`, 담당자: '이수진', 기한: addDays(n.시행일, -21), 신뢰도: 0.82,
       영향: '권고 조치 문구에 개정 전 기준이 들어 있을 수 있음', 조치: '권고 조치 문구 갱신', 근거: ids });
   }
-  return items.map((x, i) => ({ id: `${n.id}-${String(i + 1).padStart(2, '0')}`, 출처: 'AI', 상태: '대기', ...x }));
+  return items.map((x, i) => ({ id: `${n.id}-${String(i + 1).padStart(2, '0')}`, 출처: 'AI', 상태: '대기', 판단: '확인 전', ...x }));
 }
 
 // ---------------------------------------------------------------- 초기 상태 (시연용: 일부 고시는 이미 진행 중)
 function seed() {
-  S = { v: 2, notices: {}, approvals: [], prop: {}, log: [], checked: null };
+  S = { v: 3, notices: {}, approvals: [], prop: {}, log: [], checked: null };
   for (const n of NOTICES.filter(n => n.초기상태)) {
     const st = n.초기상태;
     (n.규칙제안 || []).forEach((p, i) => { if (!st.규칙승인) return; S.prop[`${n.id}:${i}`] = '승인'; S.approvals.push({ notice: n.id, idx: i, 규칙: p.규칙, 종류: p.종류, 값: p.제안, CAS: p.CAS, 시행일: p.시행일, 근거: p.근거, 승인자: st.승인자, 일시: st.분석일 + ' 15:00', 의견: '개정 조문과 일치 확인' }); });
@@ -147,6 +147,9 @@ function seed() {
     const st = n.초기상태;
     const tasks = analyze(n);
     tasks.forEach((t, i) => {
+      t.판단 = '조치 대상'; t.판단자 = st.승인자.split(' ')[0];
+      const na = (st.비대상 || []).find(x => x.i === i);
+      if (na) { t.판단 = '비대상'; t.판단사유 = na.사유; return; }
       if (st.완료 === 'all' || (st.완료 || []).includes(i)) t.상태 = '완료';
       else if ((st.진행 || []).includes(i)) t.상태 = '진행 중';
       if (t.규칙키 && st.규칙승인) t.상태 = '완료';
@@ -160,18 +163,20 @@ function seed() {
   save();
 }
 try { S = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { S = null; }
-if (!S || S.v !== 2) seed();
+if (!S || S.v !== 3) seed();
 K = knowledge();
 
 function nstate(n) {
   const s = S.notices[n.id];
   if (!s) return '신규';
-  const t = s.tasks;
+  const t = s.tasks.filter(act);
   if (t.length && t.every(x => x.상태 === '완료')) return '완료';
   if (t.some(x => x.상태 !== '대기')) return '조치 중';
   return '분석 완료';
 }
 const stPill = st => `<span class="pill ${{ 신규: 'red', '분석 완료': 'navy', '조치 중': 'orange', 완료: 'green' }[st]}">${st}</span>`;
+const act = x => x.판단 !== '비대상';
+const JD = ['확인 전', '조치 대상', '비대상'];
 const taskPill = st => `<span class="pill ${{ 대기: 'gray', '진행 중': 'orange', 완료: 'green' }[st]}">${st}</span>`;
 
 // ---------------------------------------------------------------- 탭
@@ -294,7 +299,7 @@ function runAnalysis(after) {
     k++; draw();
     if (k < steps.length) return setTimeout(tick, 550);
     const tasks = analyze(n);
-    tasks.filter(x => x.규칙키 && n.규칙제안.every((q, k) => q.규칙 !== x.규칙키 || S.prop[`${n.id}:${k}`])).forEach(x => { x.상태 = '완료'; });
+    tasks.filter(x => x.규칙키 && n.규칙제안.every((q, k) => q.규칙 !== x.규칙키 || S.prop[`${n.id}:${k}`])).forEach(x => { x.상태 = '완료'; x.판단 = '조치 대상'; x.판단자 = '김지훈'; });
     S.notices[n.id] = { 분석일: base(), tasks };
     if (after) after();
     log(`${n.id} 영향도 분석 — 조치 ${tasks.length}건 제안`, 'AI'); save();
@@ -312,20 +317,21 @@ function renderAna() {
     $('anaBtn').onclick = runAnalysis;
     return;
   }
-  const t = s.tasks;
-  const cnt = {}; t.forEach(x => cnt[x.구분] = (cnt[x.구분] || 0) + 1);
-  const done = t.filter(x => x.상태 === '완료').length, prog = t.filter(x => x.상태 === '진행 중').length;
-  const over = t.filter(x => x.상태 !== '완료' && x.기한 < base()).length;
+  const t = s.tasks, ta = t.filter(act);
+  const cnt = {}; ta.forEach(x => cnt[x.구분] = (cnt[x.구분] || 0) + 1);
+  const done = ta.filter(x => x.상태 === '완료').length, prog = ta.filter(x => x.상태 === '진행 중').length;
+  const over = ta.filter(x => x.상태 !== '완료' && x.기한 < base()).length;
+  const jw = t.filter(x => x.판단 === '확인 전').length, jy = t.filter(x => x.판단 === '조치 대상').length, jn = t.filter(x => x.판단 === '비대상').length;
   const docRecs = t.filter(x => x.수정안).flatMap(x => x.수정안);
   $('anaBox').innerHTML = `
   <div class="card">
-    <div class="row between"><div><h2>영향 분석 결과 · 조치 목록</h2><p class="desc" style="margin:0">분석일 ${s.분석일} · AI 제안 ${t.filter(x => x.출처 === 'AI').length}건 · 직접 추가 ${t.filter(x => x.출처 !== 'AI').length}건 · 담당자와 기한은 바로 바꿀 수 있습니다.</p></div>
-      <div class="row noprint"><button class="btn ghost sm" id="notifyBtn">담당자 알림 발송</button><button class="btn ghost sm" id="csvBtn">엑셀(CSV) 내보내기</button><button class="btn ghost sm" id="reBtn">다시 분석</button></div></div>
-    <div class="chips">${Object.entries(cnt).map(([k, v]) => `<span class="chip">${esc(k)} <b>${v}</b></span>`).join('')}<span class="chip">문서 수정 제안 <b>${docRecs.length}</b>곳 (채택 ${docRecs.filter(r => r.채택).length})</span></div>
-    <div class="prog"><span class="d" style="width:${t.length ? done / t.length * 100 : 0}%"></span><span class="p" style="width:${t.length ? prog / t.length * 100 : 0}%"></span></div>
-    <div class="legend"><span><i style="background:var(--green)"></i>완료 ${done}</span><span><i style="background:var(--orange)"></i>진행 중 ${prog}</span><span><i style="background:#E3E9F2"></i>대기 ${t.length - done - prog}</span>${over ? `<span style="color:var(--red);font-weight:700">기한 경과 ${over}</span>` : ''}</div>
+    <div class="row between"><div><h2>영향 분석 결과 · 조치 목록</h2><p class="desc" style="margin:0">분석일 ${s.분석일} · AI 제안 ${t.filter(x => x.출처 === 'AI').length}건 · 직접 추가 ${t.filter(x => x.출처 !== 'AI').length}건 · 담당자가 AI 추천을 확인해 조치 대상·비대상을 판단합니다. 담당자와 기한은 바로 바꿀 수 있습니다.</p></div>
+      <div class="row noprint">${jw ? `<button class="btn blue sm" id="bulkBtn">확인 전 ${jw}건 모두 조치 대상</button>` : ''}<button class="btn ghost sm" id="notifyBtn">담당자 알림 발송</button><button class="btn ghost sm" id="csvBtn">엑셀(CSV) 내보내기</button><button class="btn ghost sm" id="reBtn">다시 분석</button></div></div>
+    <div class="chips"><span class="chip" style="${jw ? 'border-color:var(--orange);background:var(--lorange)' : ''}">판단 대기 <b>${jw}</b></span><span class="chip">조치 대상 <b>${jy}</b></span><span class="chip">비대상 <b>${jn}</b></span><span class="muted" style="align-self:center">|</span>${Object.entries(cnt).map(([k, v]) => `<span class="chip">${esc(k)} <b>${v}</b></span>`).join('')}<span class="chip">문서 수정 제안 <b>${docRecs.length}</b>곳 (채택 ${docRecs.filter(r => r.채택).length})</span></div>
+    <div class="prog"><span class="d" style="width:${ta.length ? done / ta.length * 100 : 0}%"></span><span class="p" style="width:${ta.length ? prog / ta.length * 100 : 0}%"></span></div>
+    <div class="legend"><span><i style="background:var(--green)"></i>완료 ${done}</span><span><i style="background:var(--orange)"></i>진행 중 ${prog}</span><span><i style="background:#E3E9F2"></i>대기 ${ta.length - done - prog}</span><span>(비대상 ${jn}건 제외)</span>${over ? `<span style="color:var(--red);font-weight:700">기한 경과 ${over}</span>` : ''}</div>
     <div class="scroll" style="margin-top:12px"><table class="tasks" id="taskTable">
-      <tr><th>구분</th><th style="min-width:300px">영향 대상 · 내용</th><th>조치</th><th>담당자</th><th>기한</th><th>상태</th><th class="noprint"></th></tr>
+      <tr><th>구분</th><th style="min-width:300px">영향 대상 · 내용</th><th>조치</th><th style="min-width:150px">담당자 판단</th><th>담당자</th><th>기한</th><th>상태</th><th class="noprint"></th></tr>
       ${t.map((x, i) => taskRow(x, i)).join('')}
     </table></div>
   </div>
@@ -344,21 +350,23 @@ function renderAna() {
   $('taskTable').onclick = onTaskClick;
   $('reBtn').onclick = () => { if (confirmBox('다시 분석하면 AI 제안 항목의 담당자·기한·상태가 초기화됩니다. (직접 추가한 항목은 유지)')) { const manual = s.tasks.filter(x => x.출처 !== 'AI'); delete S.notices[n.id]; runAnalysis(() => S.notices[n.id].tasks.push(...manual)); } };
   $('csvBtn').onclick = () => exportCsv(n, t);
+  if ($('bulkBtn')) $('bulkBtn').onclick = () => { t.filter(x => x.판단 === '확인 전').forEach(x => { x.판단 = '조치 대상'; x.판단자 = '김지훈'; }); log(`${n.id} AI 추천 ${jw}건 일괄 확인 → 조치 대상`); save(); renderAna(); toast(`${jw}건을 조치 대상으로 확정했습니다`); };
   $('notifyBtn').onclick = () => {
-    const by = {}; t.filter(x => x.상태 !== '완료').forEach(x => (by[x.담당자] ||= []).push(x));
+    const by = {}; t.filter(x => x.판단 === '조치 대상' && x.상태 !== '완료').forEach(x => (by[x.담당자] ||= []).push(x));
     Object.entries(by).forEach(([p, xs]) => log(`알림 발송 → ${p}: ${n.id} 조치 ${xs.length}건 (가장 빠른 기한 ${xs.map(x => x.기한).sort()[0]})`, '시스템'));
     save(); toast(`담당자 ${Object.keys(by).length}명에게 알림을 보냈습니다 (시연: 이력에만 기록)`);
   };
   $('adBtn').onclick = () => {
     const 대상 = $('adTarget').value.trim(), 조치 = $('adAction').value.trim();
     if (!대상 || !조치) return toast('대상과 조치 내용을 입력하세요');
-    t.push({ id: `${n.id}-M${t.filter(x => x.출처 !== 'AI').length + 1}`, 출처: '직접', 상태: '대기', 구분: $('adKind').value, 대상, 영향: '담당자 직접 추가', 조치, 담당자: $('adOwner').value, 기한: $('adDue').value, 근거: [] });
+    t.push({ id: `${n.id}-M${t.filter(x => x.출처 !== 'AI').length + 1}`, 출처: '직접', 상태: '대기', 판단: '조치 대상', 판단자: '김지훈', 구분: $('adKind').value, 대상, 영향: '담당자 직접 추가', 조치, 담당자: $('adOwner').value, 기한: $('adDue').value, 근거: [] });
     log(`${n.id} 조치 직접 추가: ${대상} — ${조치}`); save(); renderAna(); toast('조치 항목을 추가했습니다');
   };
 }
 function confirmBox(msg) { return window.confirm(msg); }
 function taskRow(x, i) {
-  const over = x.상태 !== '완료' && x.기한 < base();
+  const na = x.판단 === '비대상', wait = x.판단 === '확인 전';
+  const over = !na && x.상태 !== '완료' && x.기한 < base();
   const src = x.출처 === 'AI' ? `<span class="ai">AI ${Math.round((x.신뢰도 || 0) * 100)}%</span>` : '<span class="man">직접</span>';
   let recs = '';
   if (x.수정안 && x.수정안.length) {
@@ -370,19 +378,31 @@ function taskRow(x, i) {
       <div class="hidden" id="ed-${i}-${j}"><textarea>${esc(r.최종 || r.수정안)}</textarea><button class="btn blue sm" data-save="${i}:${j}">저장·채택</button></div></div>`).join('')}</details>`;
   }
   const link = x.규칙키 ? ` <a href="#" data-rule="1" class="small">→ 승인 화면</a>` : '';
-  return `<tr class="${over ? 'over' : ''}" data-i="${i}">
+  const jc = { '확인 전': 'orange', '조치 대상': 'navy', 비대상: 'gray' }[x.판단];
+  const judge = `<select data-f="판단" style="border-color:var(--${jc === 'gray' ? 'line' : jc});font-weight:700">${JD.map(v => `<option ${v === x.판단 ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    ${x.출처 === 'AI' ? `<div class="small muted" style="margin-top:3px">AI 추천: ${(x.신뢰도 || 0) < 0.7 ? '검토 필요' : '조치 대상'}</div>` : ''}
+    ${na ? `<textarea data-f="판단사유" placeholder="비대상 사유 (필수)" style="min-height:52px;margin-top:4px;font-size:12px;${x.판단사유 ? '' : 'border-color:var(--red)'}">${esc(x.판단사유 || '')}</textarea>` : ''}
+    ${!wait && x.판단자 ? `<div class="small muted" style="margin-top:3px">확인: ${esc(x.판단자)}</div>` : ''}`;
+  return `<tr class="${over ? 'over' : ''} ${na ? 'na' : ''}" data-i="${i}">
     <td><span class="pill line">${esc(x.구분)}</span><br>${src}</td>
     <td><b>${esc(x.대상)}</b><div class="muted">${esc(x.영향)}</div>${recs}</td>
     <td class="small">${esc(x.조치)}${link}</td>
+    <td>${judge}</td>
     <td><select data-f="담당자">${personOpts(x.담당자)}</select></td>
     <td><input type="date" data-f="기한" value="${x.기한}"><div class="small ${over ? '' : 'muted'}" style="${over ? 'color:var(--red);font-weight:700' : ''}">${dday(x.기한)}</div></td>
-    <td><select data-f="상태">${ST.map(s => `<option ${s === x.상태 ? 'selected' : ''}>${s}</option>`).join('')}</select></td>
+    <td>${na ? '<span class="pill gray">해당 없음</span>' : `<select data-f="상태" ${wait ? 'disabled title="먼저 조치 대상 여부를 확인하세요"' : ''}>${ST.map(s => `<option ${s === x.상태 ? 'selected' : ''}>${s}</option>`).join('')}</select>${wait ? '<div class="small muted">판단 후 진행</div>' : ''}`}</td>
     <td class="noprint">${x.출처 !== 'AI' ? `<button class="btn ghost sm" data-del="${i}">삭제</button>` : ''}</td></tr>`;
 }
 function onTaskChange(e) {
   const f = e.target.dataset.f; if (!f) return;
   const i = +e.target.closest('tr').dataset.i, n = N(), x = S.notices[n.id].tasks[i];
   const old = x[f]; x[f] = e.target.value;
+  if (f === '판단') {
+    x.판단자 = '김지훈';
+    if (x[f] === '비대상') { x.판단사유 = x.판단사유 || ''; toast('비대상 사유를 입력하세요 (감사 대응용 기록)'); }
+    if (x[f] !== '비대상') delete x.판단사유;
+  }
+  if (f === '판단사유') { log(`${x.id} 비대상 사유: ${x[f]} (${x.대상})`); save(); return renderAna(); }
   log(`${x.id} ${f} 변경: ${old} → ${x[f]} (${x.대상})`); save(); renderAna();
 }
 function onTaskClick(e) {
@@ -404,7 +424,7 @@ function onTaskClick(e) {
   if (el.dataset.edit) { const [i, j] = ij(el.dataset.edit); $(`ed-${i}-${j}`).classList.toggle('hidden'); }
 }
 function exportCsv(n, t) {
-  const rows = [['번호', '구분', '대상', '영향', '조치', '담당자', '기한', '상태', '출처', '근거']].concat(t.map(x => [x.id, x.구분, x.대상, x.영향, x.조치, x.담당자, x.기한, x.상태, x.출처 === 'AI' ? `AI(${Math.round(x.신뢰도 * 100)}%)` : '직접', (x.근거 || []).join(' ')]));
+  const rows = [['번호', '구분', '대상', '영향', '조치', '담당자 판단', '비대상 사유', '판단자', '담당자', '기한', '상태', '출처', '근거']].concat(t.map(x => [x.id, x.구분, x.대상, x.영향, x.조치, x.판단, x.판단사유 || '', x.판단자 || '', x.담당자, x.기한, x.판단 === '비대상' ? '해당 없음' : x.상태, x.출처 === 'AI' ? `AI(${Math.round(x.신뢰도 * 100)}%)` : '직접', (x.근거 || []).join(' ')]));
   const csv = '﻿' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `${n.id}_조치목록.csv`; a.click();
 }
@@ -446,7 +466,7 @@ $('propOut').onclick = e => {
   S.approvals.push(a); S.prop[`${n.id}:${i}`] = '승인';
   // 연결된 '지식(규칙)' 조치 항목 자동 완료
   const allDone = n.규칙제안.every((q, k) => q.규칙 !== p.규칙 || S.prop[`${n.id}:${k}`]);
-  if (allDone && ns) ns.tasks.filter(t => t.규칙키 === p.규칙).forEach(t => t.상태 = '완료');
+  if (allDone && ns) ns.tasks.filter(t => t.규칙키 === p.규칙).forEach(t => { t.상태 = '완료'; t.판단 = '조치 대상'; t.판단자 = a.승인자; });
   log(`${n.id} 규칙 반영 승인: ${p.항목} ${p.현행} → ${a.값 ?? '변경 없음'} (시행 ${a.시행일})`, a.승인자);
   save(); K = knowledge(); renderCmp(); showYaml(a);
   toast(`승인 완료 — ${a.시행일}부터 새 규칙 버전으로 판정합니다`);
@@ -505,25 +525,26 @@ function showYaml(a) {
 
 // ================================================================ ⑤ 대시보드
 function renderDash() {
-  const all = NOTICES.flatMap(n => (S.notices[n.id]?.tasks || []).map(t => ({ ...t, n })));
+  const raw = NOTICES.flatMap(n => (S.notices[n.id]?.tasks || []).map(t => ({ ...t, n })));
+  const all = raw.filter(act), jw = raw.filter(t => t.판단 === '확인 전').length, jn = raw.length - all.length;
   const done = all.filter(t => t.상태 === '완료').length;
   const over = all.filter(t => t.상태 !== '완료' && t.기한 < base());
   const soon = all.filter(t => t.상태 !== '완료' && t.기한 >= base() && daysBetween(base(), t.기한) <= 30);
   const pend = NOTICES.reduce((s, n) => s + (n.규칙제안 || []).filter((p, i) => !S.prop[`${n.id}:${i}`]).length, 0);
   $('dashKpi').innerHTML = [
     [NOTICES.length + '건', `감지 고시 (미분석 ${NOTICES.filter(n => nstate(n) === '신규').length})`, NOTICES.some(n => nstate(n) === '신규')],
-    [all.length + '건', '전체 조치 항목'], [(all.length ? Math.round(done / all.length * 100) : 0) + '%', `완료율 (${done}/${all.length})`],
-    [over.length + '건', '기한 경과', over.length > 0], [soon.length + '건', '30일 내 마감'], [pend + '건', '규칙 승인 대기', pend > 0],
+    [jw + '건', 'AI 추천 판단 대기', jw > 0], [all.length + '건', `조치 대상 (비대상 ${jn} 제외)`], [(all.length ? Math.round(done / all.length * 100) : 0) + '%', `완료율 (${done}/${all.length})`],
+    [over.length + '건', '기한 경과', over.length > 0], [pend + '건', '규칙 승인 대기', pend > 0],
   ].map(([v, l, a]) => `<div class="kpi ${a ? 'alert' : ''}"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
   $('dashCards').innerHTML = NOTICES.map(n => {
-    const t = S.notices[n.id]?.tasks || [], d = t.filter(x => x.상태 === '완료').length, p = t.filter(x => x.상태 === '진행 중').length;
+    const tr = S.notices[n.id]?.tasks || [], t = tr.filter(act), w = tr.filter(x => x.판단 === '확인 전').length, d = t.filter(x => x.상태 === '완료').length, p = t.filter(x => x.상태 === '진행 중').length;
     const o = t.filter(x => x.상태 !== '완료' && x.기한 < base()).length;
     const kinds = {}; t.forEach(x => { kinds[x.구분] ||= [0, 0]; kinds[x.구분][0]++; if (x.상태 === '완료') kinds[x.구분][1]++; });
     const pct = t.length ? Math.round(d / t.length * 100) : 0;
     return `<div class="ncard" data-n="${n.id}">
       <div class="row between">${stPill(nstate(n))}<span class="muted small">시행 ${n.시행일} · ${dday(n.시행일)}</span></div>
       <h4>${esc(n.제목.replace('[가상] ', ''))}</h4>
-      ${t.length ? `<div class="row between small"><b style="font-size:20px;color:var(--navy)">${pct}%</b><span class="muted">완료 ${d} · 진행 ${p} · 대기 ${t.length - d - p}${o ? ` · <b style="color:var(--red)">경과 ${o}</b>` : ''}</span></div>
+      ${t.length ? `<div class="row between small"><b style="font-size:20px;color:var(--navy)">${pct}%</b><span class="muted">완료 ${d} · 진행 ${p} · 대기 ${t.length - d - p}${tr.length - t.length ? ` · 비대상 ${tr.length - t.length}` : ''}${w ? ` · <b style="color:var(--orange)">판단 대기 ${w}</b>` : ''}${o ? ` · <b style="color:var(--red)">경과 ${o}</b>` : ''}</span></div>
       <div class="prog" style="margin:6px 0 8px"><span class="d" style="width:${d / t.length * 100}%"></span><span class="p" style="width:${p / t.length * 100}%"></span></div>
       <div class="chips" style="margin:0">${Object.entries(kinds).map(([k, [a, b]]) => `<span class="chip">${esc(k)} <b>${b}/${a}</b></span>`).join('')}</div>`
       : `<p class="muted" style="margin:6px 0">아직 영향도 분석 전입니다.</p><button class="btn orange sm">영향도 분석</button>`}</div>`;
