@@ -827,22 +827,19 @@ function graphSvg() {
 
 // ---- 화면
 function renderKX() {
-  if (RV.view !== '지식수정') return curTab === 't8' ? renderReview() : null;
+  if (RV.view !== '관계도') return curTab === 't8' ? renderReview() : null;
   const host = $('kxHost'); if (!host) return;
   host.innerHTML = '<div id="kx"></div>';
   const box = $('kx');
   const legend = Object.entries({ 고시: '고시·개정', 조문: '법령 조문', 규칙: '판정 규칙·기준표', 가이드: '지적·조치 가이드', 해석: '해석·판단 (유권해석·컨설턴트)', 문서: '사업장 문서' })
     .map(([k, v]) => `<span><i style="background:${TYPE_COLOR[k]}"></i>${v}</span>`).join('') +
     '<span style="margin-left:10px">선: <b style="color:#C9822B">개정</b> · <b style="color:#2D5FA8">근거</b> · <b style="color:#3A9B6A">연결</b> · <b style="color:#6B5BA8">인용</b> · <b style="color:#B5487A">해석·적용</b> · <b style="color:#9AA5B4">위임(점선)</b></span>';
+  const sel = ED.sel, ro = sel && (sel.startsWith('A:') || sel.startsWith('N:'));
   box.innerHTML = `
-    <div class="row between"><div><h2 id="kxTitle" style="margin:0">지식 수정</h2><p class="desc" style="margin:2px 0 0">왼쪽에서 지식을 고르고 수정 · 규칙·규정수량은 수정안 → 목록에서 확정</p></div>
-      <div class="row"><input type="text" id="kxQ" placeholder="지식 검색 (예: 표시, 30일, 암모니아)" value="${esc(ED.q)}" style="width:240px"><button class="btn sm" style="background:${TYPE_COLOR.해석}" data-act="new-int">+ 해석·판단</button><button class="btn blue sm" data-act="new">+ 새 점검 규칙</button><button class="btn ${ED.graph ? '' : 'ghost'} sm" data-act="graph">${ED.graph ? '관계도 닫기' : '전체 관계도 보기'}</button></div></div>
-    ${ED.graph ? `<div class="legend" style="margin:10px 0 4px;flex-wrap:wrap">${legend}</div>
-    <div class="scroll" id="kxGraph" style="border:1px solid var(--line);border-radius:10px;background:#FBFCFE;padding:6px">${graphSvg()}</div>` : ''}
-    <div class="grid2" style="grid-template-columns:280px 1fr;margin-top:14px">
-      <div id="kxNav" style="max-height:640px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px">${navHtml()}</div>
-      <div id="kxDetail">${detailHtml()}</div>
-    </div>`;
+    <div class="row between"><div><h2 style="margin:0">전체 관계도</h2><p class="desc" style="margin:2px 0 0">노드를 누르면 연결된 지식이 강조됩니다 · 규칙·기준표·가이드·해석·문서는 목록에서 열려 수정할 수 있습니다</p></div></div>
+    <div class="legend" style="margin:10px 0 4px;flex-wrap:wrap">${legend}</div>
+    <div class="scroll" id="kxGraph" style="border:1px solid var(--line);border-radius:10px;background:#FBFCFE;padding:6px">${graphSvg()}</div>
+    ${ro ? `<div id="kxDetail" style="margin-top:12px">${detailHtml()}</div>` : ''}`;
   bindKX();
 }
 function navHtml() {
@@ -1097,7 +1094,10 @@ function bindKX() {
   box.onclick = e => {
     const nodeEl = e.target.closest('[data-node]'); const actEl = e.target.closest('[data-act]');
     if (actEl) { e.preventDefault(); return kxAct(actEl.dataset.act, actEl.dataset.v); }
-    if (nodeEl && !e.target.closest('input,select,textarea')) { e.preventDefault(); selectNode(nodeEl.dataset.node); }
+    if (nodeEl && !e.target.closest('input,select,textarea')) { e.preventDefault(); const nid = nodeEl.dataset.node;
+      if (RV.view === '관계도' && !nid.startsWith('A:') && !nid.startsWith('N:')) { ED.sel = nid; ED.mode = 'view'; ED.draft = null; RV.view = '목록'; RV.sel = K.규칙.some(r => r.id === nid) ? nid : 'K|' + nid; return renderReview(); }
+      if (RV.view === '목록' && e.target.closest('#rvDetail')) { ED.sel = nid; ED.mode = 'view'; ED.draft = null; RV.view = '관계도'; return renderReview(); }
+      selectNode(nid); }
   };
 }
 function kxAct(a, v) {
@@ -1106,6 +1106,7 @@ function kxAct(a, v) {
     if (apr && PEND_KINDS.includes(apr.종류)) { apr.대기 = true; msg = msg.replace(/을 저장했습니다.*$|을 추가했습니다.*$/, '') + ' 수정안을 저장했습니다 — 확정하면 판정에 적용됩니다'; }
     if (apr) S.approvals.push(apr); save(); K = knowledge(); ED.mode = 'view'; ED.draft = null; ED.verView = null;
     if (apr && apr.대기) { RV.sel = 'E|' + (S.approvals.length - 1); RV.view = '목록'; }
+    else if (RV.view === '목록' && RV.sel && RV.sel.startsWith('K|')) RV.sel = 'K|' + ED.sel;
     renderKX(); toast(msg); if (apr) showYaml(apr); };
   switch (a) {
     case 'new': ED.sel = 'NEW'; ED.mode = 'edit'; return refreshDetail();
@@ -1114,9 +1115,9 @@ function kxAct(a, v) {
       if (v) { const r0 = K.규칙.find(y => y.id === v); ED.draft.값.관련조문 = [...latest(r0).근거.slice(0, 1)]; }
       ED.sel = 'I:NEW'; ED.mode = 'edit'; return refreshDetail(); }
     case 'icite-del': d.값.관련조문 = d.값.관련조문.filter(x => x !== v); return refreshDetail();
-    case 'icite-add': { const c = $('kxNewCite').value; if (c) d.값.관련조문.push(c); return refreshDetail(); }
+    case 'icite-add': { const c = $('kxNewCite').value; if (!c) return; if (d.값.관련조문.includes(c)) return toast('이미 연결된 조문입니다'); d.값.관련조문.push(c); return refreshDetail(); }
     case 'irule-del': d.값.적용규칙 = d.값.적용규칙.filter(x => x !== v); return refreshDetail();
-    case 'irule-add': { const c = $('kxIntRule').value; if (c) d.값.적용규칙.push(c); return refreshDetail(); }
+    case 'irule-add': { const c = $('kxIntRule').value; if (!c) return; if (d.값.적용규칙.includes(c)) return toast('이미 연결된 규칙입니다'); d.값.적용규칙.push(c); return refreshDetail(); }
     case 'int-save': {
       const x = d.값; if (!x.제목.trim() || !x.판단.trim()) return toast('제목과 판단(답변)을 입력하세요');
       if (!x.관련조문.length) return toast('관련 조문을 하나 이상 연결하세요');
@@ -1130,18 +1131,19 @@ function kxAct(a, v) {
       else if (id.startsWith('I:')) ED.draft = { id, 값: clone(K.해석.find(g => g.id === id.slice(2))) };
       else { const last = latest(r); ED.draft = { id, 이름: r.이름, 설명: r.설명, 버전: clone(last), 시행일: last.시행일 >= base() ? addDays(last.시행일, 1) : base(), 승인자: '김지훈', 의견: '' }; }
       ED.mode = 'edit'; return refreshDetail();
-    case 'cancel': ED.mode = 'view'; ED.draft = null; if (id === 'NEW' || id === 'I:NEW') ED.sel = 'R-23-3'; if (RV.view !== '지식수정') return renderReview(); return refreshDetail();
+    case 'cancel': ED.mode = 'view'; ED.draft = null; if (id === 'NEW' || id === 'I:NEW') { ED.sel = 'R-23-3'; if (RV.sel && RV.sel.startsWith('K|')) RV.sel = null; } if (RV.view !== '관계도') return renderReview(); return refreshDetail();
     case 'days': d.버전.결과.기한.일수 += +v; return refreshDetail();
     case 'cond-del': d.버전.조건.any.splice(+v, 1); return refreshDetail();
-    case 'cond-add': { const f = $('kxNewField').value, c = $('kxNewFieldCite').value; if (!f) return toast('추가할 조건을 고르세요'); d.버전.조건.any.push({ 필드: f, 같음: true, 설명: FIELD_NAME[f], 근거: c || d.버전.근거[0] }); return refreshDetail(); }
+    case 'cond-add': { const f = $('kxNewField').value, c = $('kxNewFieldCite').value; if (!f) return toast('추가할 조건을 고르세요'); if (d.버전.조건.any.some(x => x.필드 === f)) return toast('이미 있는 조건입니다'); d.버전.조건.any.push({ 필드: f, 같음: true, 설명: FIELD_NAME[f], 근거: c || d.버전.근거[0] }); return refreshDetail(); }
     case 'row-add': d.버전.결정표.splice(d.버전.결정표.length - 1, 0, { 사업장군: '2군', 주기_년: 3 }); return refreshDetail();
     case 'row-del': d.버전.결정표.splice(+v, 1); return refreshDetail();
     case 'item-del': d.버전.필수항목.splice(+v, 1); return refreshDetail();
-    case 'item-add': { const t = $('kxNewItem').value.trim(); if (!t) return; d.버전.필수항목.push(t); return refreshDetail(); }
+    case 'item-add': { const t = $('kxNewItem').value.trim(); if (!t) return; if (d.버전.필수항목.some(x => x.replace(/\s/g, '') === t.replace(/\s/g, ''))) return toast(`'${t}'은(는) 이미 있는 항목입니다`); d.버전.필수항목.push(t); return refreshDetail(); }
     case 'cite-del': d.버전.근거 = d.버전.근거.filter(x => x !== v); return refreshDetail();
-    case 'cite-add': { const c = $('kxNewCite').value; if (c) d.버전.근거.push(c); return refreshDetail(); }
+    case 'cite-add': { const c = $('kxNewCite').value; if (!c) return; if (d.버전.근거.includes(c)) return toast('이미 연결된 조문입니다'); d.버전.근거.push(c); return refreshDetail(); }
     case 'save': {
       const last = latest(r);
+      { const st = v0 => { const { 버전, 시행일, 폐지일, 승인, 검토, ...rest } = v0 || {}; return JSON.stringify(rest); }; if (st(last) === st(d.버전) && d.이름 === r.이름 && d.설명 === r.설명) return toast('바뀐 내용이 없습니다'); }
       if (d.시행일 <= last.시행일) return toast(`시행일은 v${last.버전} 시행일(${last.시행일}) 이후여야 합니다`);
       const apr = draftApproval(r);
       log(`지식 편집: ${r.id} v${last.버전 + 1} 저장 (시행 ${d.시행일})${d.의견 ? ' — ' + d.의견 : ''}`, d.승인자);
@@ -1157,7 +1159,7 @@ function kxAct(a, v) {
       return done(`규정수량 ${chg.length}건 수정안을 저장했습니다 — 확정하면 판정에 적용됩니다`, null);
     }
     case 'gcite-del': d.값.근거 = d.값.근거.filter(x => x !== v); return refreshDetail();
-    case 'gcite-add': { const c = $('kxNewCite').value; if (c) d.값.근거.push(c); return refreshDetail(); }
+    case 'gcite-add': { const c = $('kxNewCite').value; if (!c) return; if (d.값.근거.includes(c)) return toast('이미 연결된 조문입니다'); d.값.근거.push(c); return refreshDetail(); }
     case 'case-add': { const c = $('kxCc').value.trim(); if (!c) return; (d.값.사례 ||= []).push({ 연도: +$('kxCy').value, 시설: $('kxCf').value.trim() || '-', 내용: c }); return refreshDetail(); }
     case 'case-del': d.값.사례.splice(+v, 1); return refreshDetail();
     case 'guide-save': log(`가이드 편집: ${d.값.코드} ${d.값.지적유형}`); return done('가이드를 저장했습니다', { notice: null, 종류: '가이드편집', 값: d.값, 시행일: base(), 승인자: '김지훈', 일시: nowStr() });
@@ -1165,7 +1167,7 @@ function kxAct(a, v) {
       const t = id.slice(2), d0 = SITES[0].문서.find(x => x.유형 === t); S.docLinks ||= {};
       const cur0 = [...docLinks(d0)];
       if (a === 'dl-del') S.docLinks[t] = cur0.filter(x => x !== v);
-      else { const c = $('kxNewCite').value; if (!c) return; S.docLinks[t] = [...cur0, c]; }
+      else { const c = $('kxNewCite').value; if (!c) return; if (cur0.includes(c)) return toast('이미 연결된 조문입니다'); S.docLinks[t] = [...cur0, c]; }
       log(`문서 연결 변경: ${d0.이름} → ${S.docLinks[t].join(', ')}`); save(); return refreshDetail();
     }
     case 'nr-save': {
@@ -1703,8 +1705,8 @@ function confirmEdit(i, who, memo) {
 function renderReview() {
   renderObl();
   document.querySelectorAll('[data-rvview]').forEach(b => b.className = `btn sm ${b.dataset.rvview === RV.view ? '' : 'ghost'}`);
-  $('rvTools').classList.toggle('hidden', RV.view === '지식수정'); $('rvMain').classList.toggle('hidden', RV.view === '지식수정'); $('kxHost').classList.toggle('hidden', RV.view !== '지식수정');
-  if (RV.view !== '지식수정') $('kxHost').innerHTML = '';
+  $('rvTools').classList.toggle('hidden', RV.view === '관계도'); $('rvMain').classList.toggle('hidden', RV.view === '관계도'); $('kxHost').classList.toggle('hidden', RV.view !== '관계도');
+  if (RV.view !== '관계도') $('kxHost').innerHTML = '';
   if ($('rvGroup')) $('rvGroup').value = RV.group;
   const all = K.규칙.map(r => ({ r, rv: rvOf(r) }));
   const cnt = s0 => all.filter(x => x.rv.상태 === s0).length;
@@ -1713,7 +1715,7 @@ function renderReview() {
   $('rvKpi').innerHTML = [[(pp + PE.length) + '건', `확정 대기 (개정안 ${pp} · 수정안 ${PE.length})`, pp + PE.length > 0], [all.length + '개', '전체 규칙'], [done + '개', '확정'], [cnt('AI 초안') + '개', 'AI 초안 (검토 전)', cnt('AI 초안') > 0], [cnt('검토 중') + '개', '검토 중'], [cnt('수정 요청') + '개', '수정 요청', cnt('수정 요청') > 0],
     ].map(([v, l, a]) => `<div class="kpi ${a ? 'alert' : ''}"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
   const pend = all.length - done + pp + PE.length; $('rvDot').textContent = pend; $('rvDot').classList.toggle('hidden', !pend);
-  if (RV.view === '지식수정') return renderKX();
+  if (RV.view === '관계도') return renderKX();
   const list = all.filter(x => !RV.filter || x.rv.상태 === RV.filter);
   const groups = {}, ghead = {};
   const EG = '수정안 (확정 대기)', pel = PE.filter(() => !RV.filter || RV.filter === '수정안');
@@ -1721,6 +1723,7 @@ function renderReview() {
   const pl = PI.filter(x => !RV.filter || propRvSt(x.st) === RV.filter);
   const PG = '개정 반영 대기 (AI 추천 · 모니터링 고시)';
   if (pl.length) groups[PG] = [];
+  const KG = '기준표 · 가이드 · 해석 · 문서 연결';
   if (RV.group === '의무') {
     (K.의무 || []).forEach(o => { const rs = all.filter(x => topOf(x.r.의무분류) === o.코드); if (o.상태 === '폐지' && !rs.length) return; if (RV.filter && !list.some(x => topOf(x.r.의무분류) === o.코드)) return; const k = `${o.코드} ${o.이름}`; groups[k] = []; ghead[k] = `<span style="color:${OBL_CLR}">${esc(k)}</span> <span class="small" style="float:right;color:${rs.length ? (rs.every(x => x.rv.상태 === '확정') ? 'var(--green)' : 'var(--orange)') : 'var(--red)'}">${rs.length ? `확정 ${rs.filter(x => x.rv.상태 === '확정').length} / 전체 ${rs.length}` : '규칙 없음'}</span>`; });
     list.slice().sort((a0, b0) => RV.sort === '코드' ? (a0.r.의무분류 || 'Z').localeCompare(b0.r.의무분류 || 'Z', undefined, { numeric: true }) : byDate(ruleSrc(a0.r).공포일, ruleSrc(b0.r).공포일) || (a0.r.의무분류 || 'Z').localeCompare(b0.r.의무분류 || 'Z', undefined, { numeric: true })).forEach(x => { const o = oblTop(x.r.의무분류); (groups[o ? `${o.코드} ${o.이름}` : '미분류'] ||= []).push(x); });
@@ -1730,11 +1733,15 @@ function renderReview() {
     list.forEach(x => groups[ruleSrc(x.r).법령명].push(x));
     Object.keys(groups).filter(k => k !== PG).forEach(k => { const l = lawOf[k], rs = groups[k]; ghead[k] = `<div>${esc(k)} <span class="small" style="float:right">확정 ${rs.filter(x => x.rv.상태 === '확정').length} / 전체 ${rs.length}</span></div><div class="small" style="font-weight:400;color:var(--sub)">${esc(l.공포번호 || '')}${l.공포일 ? ` · <b style="color:var(--navy)">${l.구분 === '고시' ? '고시' : '공포'} ${esc(l.공포일)}</b>` : ''}${l.시행일 ? ` · 시행 ${esc(l.시행일)}` : ''}</div>`; });
   }
-  $('rvList').innerHTML = Object.entries(groups).map(([g, xs]) => `<div class="kxh">${ghead[g] || esc(g)}</div>` + (g === EG ? pel.map(({ a, i }) => `<div class="kxi ${RV.sel === 'E|' + i ? 'on' : ''}" data-rv="E|${i}"><i style="background:var(--orange)"></i><div style="flex:1"><div class="row between"><b>${esc(a.종류 === '새규칙' ? a.값.id : a.규칙)}</b><span class="pill orange">수정안</span></div><div class="small">${esc(editTitle(a))}</div><div class="muted small">${esc(a.종류)} · ${esc(a.승인자)} · ${esc(a.일시.slice(0, 10))} · 시행 ${esc(a.시행일)}</div></div></div>`) : g.startsWith('개정 반영') ? pl.slice().sort((a0, b0) => RV.sort === '코드' ? 0 : byDate(a0.n.공포일, b0.n.공포일)).map(x => `<div class="kxi ${RV.sel === x.key ? 'on' : ''}" data-rv="${x.key}"><i style="background:${TYPE_COLOR.고시}"></i><div style="flex:1"><div class="row between"><b>${esc(x.n.id)}</b>${propPill(x.n, x.i).replace(/AI 추천 · 개정 반영 대기 /, '대기 ')}</div><div class="small">${esc(x.p.항목)}</div><div class="small" style="color:var(--navy)">고시 <b>${esc(x.n.공포일)}</b> · 시행 ${esc(x.n.시행일)}</div><div class="muted small">${esc(x.p.규칙)} · ${esc(x.p.현행)} → ${esc(x.p.제안)}${ruleObl(x.p.규칙) ? ` · ${esc(ruleObl(x.p.규칙))} ${esc(oblOf(ruleObl(x.p.규칙))?.이름 || '')}` : ''}</div></div></div>`) : xs.map(({ r, rv }) =>
-    `<div class="kxi ${RV.sel === r.id ? 'on' : ''}" data-rv="${r.id}"><i style="background:${TYPE_COLOR.규칙}"></i><div style="flex:1"><div class="row between"><b>${esc(r.id)}</b><span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></div><div class="small">${esc(r.이름)}</div>${(l => `<div class="small" style="color:var(--navy)" title="${esc(l.법령명 + ' ' + (l.공포번호 || ''))}">${RV.group === '고시' ? '' : esc(srcShort(l)) + ' '}${esc(srcNo(l))}${l.공포일 ? ` · ${l.구분 === '고시' ? '고시' : '공포'} <b>${esc(l.공포일)}</b>` : ''}</div>`)(ruleSrc(r))}<div class="muted small">${esc(r.유형)} · v${latest(r).버전}${r.의무분류 ? ` · <b style="color:${OBL_CLR}">${esc(r.의무분류)}</b> ${esc(oblOf(r.의무분류)?.이름 || '')}` : ''}${RV.group === '고시' ? '' : ''}</div></div></div>`)).join('') + (RV.group === '의무' && g !== PG && g !== EG ? (t0 => { const t = oblTop(g.split(' ')[0]); if (!t) return ''; const miss = (t.세부 || []).filter(s0 => s0.상태 !== '폐지' && !rulesOf(s0.코드).length); return miss.length ? `<div class="muted small" style="padding:2px 10px 8px">규칙 없는 세부 업무 ${miss.length}개: ${miss.map(s0 => `<span title="${esc(s0.이름)} (${esc(s0.유형)})" style="${s0.유형 === '판정형' ? 'color:var(--red)' : ''}">${esc(s0.코드)}</span>`).join(' ')}</div>` : ''; })() : '')).join('') || '<p class="muted">해당 상태의 규칙이 없습니다.</p>';
-  const isP = RV.sel && RV.sel.startsWith('P|'), isE = RV.sel && RV.sel.startsWith('E|');
-  if (!RV.sel || (isP ? !PI.some(x => x.key === RV.sel) : isE ? !S.approvals[+RV.sel.slice(2)]?.대기 : !K.규칙.some(r => r.id === RV.sel))) { const e0 = pel[0], p0 = pl.find(x => !x.st); RV.sel = e0 ? 'E|' + e0.i : p0 ? p0.key : (list.find(x => x.rv.상태 !== '확정') || list[0] || all[0]).r.id; }
-  if (RV.sel.startsWith('P|')) renderPropDetail(RV.sel); else if (RV.sel.startsWith('E|')) renderEditDetail(+RV.sel.slice(2)); else { renderRvDetail(); if ($('kx')) bindKX(); }
+  const kitems = RV.filter ? [] : [['QTY', '물질별 규정수량 표', `물질 ${ALLCHEM.length}종 · 규정수량 규정`, '기준표'], ...K.가이드.map(g => ['G:' + g.코드, `${g.코드} ${g.지적유형}`, `지적·조치 가이드 · 규칙 ${g.규칙}`, '가이드']), ...K.해석.map(x => ['I:' + x.id, x.제목, `${x.구분} · ${x.신뢰수준} · ${x.상태}`, '해석']), ...DOC_TYPES.map(d => ['D:' + d.유형, `${d.이름} — 조문 연결`, `사업장 문서 · 조문 ${docLinks(SITES[0].문서.find(x => x.유형 === d.유형)).length}개`, '문서'])];
+  if (kitems.length) groups[KG] = [];
+  $('rvList').innerHTML = Object.entries(groups).map(([g, xs]) => `<div class="kxh">${ghead[g] || esc(g)}</div>` + (g === KG ? kitems.map(([id, t, sub, ty]) => `<div class="kxi ${RV.sel === 'K|' + id ? 'on' : ''}" data-rv="K|${esc(id)}"><i style="background:${TYPE_COLOR[ty]}"></i><div style="flex:1"><div class="small"><b>${esc(t)}</b></div><div class="muted small">${esc(sub)}</div></div></div>`) : g === EG ? pel.map(({ a, i }) => `<div class="kxi ${RV.sel === 'E|' + i ? 'on' : ''}" data-rv="E|${i}"><i style="background:var(--orange)"></i><div style="flex:1"><div class="row between"><b>${esc(a.종류 === '새규칙' ? a.값.id : a.규칙)}</b><span class="pill orange">수정안</span></div><div class="small">${esc(editTitle(a))}</div><div class="muted small">${esc(a.종류)} · ${esc(a.승인자)} · ${esc(a.일시.slice(0, 10))} · 시행 ${esc(a.시행일)}</div></div></div>`) : g.startsWith('개정 반영') ? pl.slice().sort((a0, b0) => RV.sort === '코드' ? 0 : byDate(a0.n.공포일, b0.n.공포일)).map(x => `<div class="kxi ${RV.sel === x.key ? 'on' : ''}" data-rv="${x.key}"><i style="background:${TYPE_COLOR.고시}"></i><div style="flex:1"><div class="row between"><b>${esc(x.n.id)}</b>${propPill(x.n, x.i).replace(/AI 추천 · 개정 반영 대기 /, '대기 ')}</div><div class="small">${esc(x.p.항목)}</div><div class="small" style="color:var(--navy)">고시 <b>${esc(x.n.공포일)}</b> · 시행 ${esc(x.n.시행일)}</div><div class="muted small">${esc(x.p.규칙)} · ${esc(x.p.현행)} → ${esc(x.p.제안)}${ruleObl(x.p.규칙) ? ` · ${esc(ruleObl(x.p.규칙))} ${esc(oblOf(ruleObl(x.p.규칙))?.이름 || '')}` : ''}</div></div></div>`) : xs.map(({ r, rv }) =>
+    `<div class="kxi ${RV.sel === r.id ? 'on' : ''}" data-rv="${r.id}"><i style="background:${TYPE_COLOR.규칙}"></i><div style="flex:1"><div class="row between"><b>${esc(r.id)}</b><span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></div><div class="small">${esc(r.이름)}</div>${(l => `<div class="small" style="color:var(--navy)" title="${esc(l.법령명 + ' ' + (l.공포번호 || ''))}">${RV.group === '고시' ? '' : esc(srcShort(l)) + ' '}${esc(srcNo(l))}${l.공포일 ? ` · ${l.구분 === '고시' ? '고시' : '공포'} <b>${esc(l.공포일)}</b>` : ''}</div>`)(ruleSrc(r))}<div class="muted small">${esc(r.유형)} · v${latest(r).버전}${r.의무분류 ? ` · <b style="color:${OBL_CLR}">${esc(r.의무분류)}</b> ${esc(oblOf(r.의무분류)?.이름 || '')}` : ''}${RV.group === '고시' ? '' : ''}</div></div></div>`)).join('') + (RV.group === '의무' && g !== PG && g !== EG && g !== KG ? (t0 => { const t = oblTop(g.split(' ')[0]); if (!t) return ''; const miss = (t.세부 || []).filter(s0 => s0.상태 !== '폐지' && !rulesOf(s0.코드).length); return miss.length ? `<div class="muted small" style="padding:2px 10px 8px">규칙 없는 세부 업무 ${miss.length}개: ${miss.map(s0 => `<span title="${esc(s0.이름)} (${esc(s0.유형)})" style="${s0.유형 === '판정형' ? 'color:var(--red)' : ''}">${esc(s0.코드)}</span>`).join(' ')}</div>` : ''; })() : '')).join('') || '<p class="muted">해당 상태의 규칙이 없습니다.</p>';
+  const isP = RV.sel && RV.sel.startsWith('P|'), isE = RV.sel && RV.sel.startsWith('E|'), isK = RV.sel && RV.sel.startsWith('K|');
+  if (!RV.sel || (isK ? !(['K|NEW', 'K|I:NEW'].includes(RV.sel) || kitems.some(x => 'K|' + x[0] === RV.sel)) : isP ? !PI.some(x => x.key === RV.sel) : isE ? !S.approvals[+RV.sel.slice(2)]?.대기 : !K.규칙.some(r => r.id === RV.sel))) { const e0 = pel[0], p0 = pl.find(x => !x.st); RV.sel = e0 ? 'E|' + e0.i : p0 ? p0.key : (list.find(x => x.rv.상태 !== '확정') || list[0] || all[0]).r.id; }
+  if (RV.sel.startsWith('P|')) renderPropDetail(RV.sel); else if (RV.sel.startsWith('E|')) renderEditDetail(+RV.sel.slice(2));
+  else if (RV.sel.startsWith('K|')) { const nid = RV.sel.slice(2); if (ED.sel !== nid) { ED.sel = nid; ED.mode = 'view'; ED.draft = null; } $('rvDetail').innerHTML = `<div id="kx"><div id="kxDetail">${detailHtml()}</div></div>`; bindKX(); }
+  else { renderRvDetail(); if ($('kx')) bindKX(); }
 }
 function renderRvDetail() {
   const r = K.규칙.find(x => x.id === RV.sel), v = latest(r), rv = rvOf(r), M = v.검토 || {};
@@ -1744,9 +1751,9 @@ function renderRvDetail() {
   $('rvDetail').innerHTML = `
     <div class="result" style="background:#fff">
       <div class="row between"><h3 style="margin:0">${esc(r.id)} ${esc(r.이름)} <span class="pill gray">${esc(r.유형)}</span> <span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></h3>
-        <div class="row">${ED.mode === 'edit' && ED.sel === r.id ? '' : `<button class="btn blue sm" data-rvact="edit">✎ 수정</button>`}<button class="btn ghost sm" data-rvgo="${r.id}">지식 수정에서 보기</button></div></div>
+        <div class="row">${ED.mode === 'edit' && ED.sel === r.id ? '' : `<button class="btn blue" data-rvact="edit">✎ 수정하기</button>`}<button class="btn ghost sm" data-rvgo="${r.id}">관계도에서 보기</button></div></div>
       ${(pe => pe.length ? `<div class="small" style="margin:6px 0 0;padding:6px 10px;background:#FFF4E5;border:1px solid var(--orange);border-radius:8px">수정안 ${pe.length}건 확정 대기 — ${pe.map(x => `<a href="#" data-rvsel="E|${x.i}">${esc(x.a.승인자)} ${esc(x.a.일시.slice(0, 10))} (시행 ${esc(x.a.시행일)})</a>`).join(', ')}</div>` : '')(pendEdits().filter(x => x.a.규칙 === r.id))}
-      ${ED.mode === 'edit' && ED.sel === r.id ? `<div id="kx" style="margin-top:10px;border:2px solid var(--blue);border-radius:10px;padding:10px;background:#F7FAFF"><div class="small" style="margin-bottom:6px"><b style="color:var(--blue)">수정 중</b> — 저장하면 <b>수정안</b>으로 등록되고, 확정해야 판정에 적용됩니다.</div><div id="kxDetail">${detailHtml()}</div></div>` : ''}
+      ${ED.mode === 'edit' && ED.sel === r.id ? `<div id="kx" style="margin-top:10px;border:2px solid var(--blue);border-radius:10px;padding:10px;background:#F7FAFF"><div class="row between" style="margin-bottom:6px"><span class="small"><b style="color:var(--blue)">수정 중</b> — 저장하면 <b>수정안</b>으로 등록되고, 확정해야 판정에 적용됩니다.</span><span class="row"><button class="btn green sm" data-act="save">수정안 저장</button><button class="btn ghost sm" data-act="cancel">취소</button></span></div><div id="kxDetail">${detailHtml()}</div></div>` : ''}
       <p class="muted" style="margin:6px 0">${esc(r.설명)}</p>
       <div class="kv"><b>의무 분류</b><span>${oblSelect('rvObl', r.의무분류, true)}
           <span class="small muted">연관 의무</span> ${(K.의무 || []).filter(o => o.상태 !== '폐지').map(o => `<label class="small" style="white-space:nowrap" title="${esc(o.이름)}"><input type="checkbox" data-rvrel="${o.코드}" ${(r.연관분류 || []).includes(o.코드) ? 'checked' : ''}>${esc(o.코드)}</label>`).join(' ')}
@@ -1786,8 +1793,8 @@ $('rvDetail') && ($('rvDetail').onchange = e => {
 });
 $('rvDetail') && ($('rvDetail').onclick = e => {
   if (e.target.closest('#kx')) return;
-  const go = e.target.closest('[data-rvgo]'); if (go) { ED.sel = go.dataset.rvgo; ED.mode = 'view'; ED.draft = null; RV.view = '지식수정'; return renderReview(); }
-  const nd = e.target.closest('[data-node]'); if (nd) { e.preventDefault(); ED.sel = nd.dataset.node; ED.mode = 'view'; ED.draft = null; RV.view = '지식수정'; return renderReview(); }
+  const go = e.target.closest('[data-rvgo]'); if (go) { ED.sel = go.dataset.rvgo; ED.mode = 'view'; ED.draft = null; RV.view = '관계도'; return renderReview(); }
+  const nd = e.target.closest('[data-node]'); if (nd) { e.preventDefault(); ED.sel = nd.dataset.node; ED.mode = 'view'; ED.draft = null; RV.view = '관계도'; return renderReview(); }
   const g4 = e.target.closest('[data-pgo4]'); if (g4) return openCmp(g4.dataset.pgo4);
   const rs = e.target.closest('[data-rvsel]'); if (rs) { e.preventDefault(); RV.sel = rs.dataset.rvsel; return renderReview(); }
   const ea = e.target.closest('[data-eact]'); if (ea) {
@@ -1825,6 +1832,8 @@ $('rvDetail') && ($('rvDetail').onclick = e => {
   toast(act === '확정' ? `${r.id} 확정 저장 — 판정 결과에 '확정' 규칙으로 표시됩니다` : `${r.id} ${act}`);
   renderReview();
 });
+$('rvNewRule') && ($('rvNewRule').onclick = () => { RV.view = '목록'; RV.filter = ''; kxAct('new'); RV.sel = 'K|NEW'; renderReview(); });
+$('rvNewInt') && ($('rvNewInt').onclick = () => { RV.view = '목록'; RV.filter = ''; kxAct('new-int'); RV.sel = 'K|I:NEW'; renderReview(); });
 $('rvExport') && ($('rvExport').onclick = () => {
   const out = K.규칙.filter(r => rvOf(r).상태 === '확정').map(r => ({ ...r, 검토결과: rvOf(r) }));
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({ 내보낸시각: nowStr(), 규칙: out }, null, 2)], { type: 'application/json' }));
