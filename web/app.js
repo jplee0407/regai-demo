@@ -18,7 +18,7 @@ const sitePill = id => `<span class="pill ${id === 'HQ' ? 'gray' : 'navy'}" styl
 const ST = ['대기', '진행 중', '완료'];
 
 // ---------------------------------------------------------------- 상태 저장 (브라우저 localStorage)
-const KEY = 'regai-demo-v7';
+const KEY = 'regai-demo-v8';
 const nowStr = () => new Date().toLocaleString('sv-SE').slice(0, 16);
 let S;
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* 저장 불가 환경 */ } }
@@ -41,13 +41,15 @@ const shash = s => { let h = 2166136261; for (const c of s) { h ^= c.codePointAt
 // ---------------------------------------------------------------- 지식 = 저장소 지식 + 전문가 승인 내역
 function docLinks(d) { return (S && S.docLinks && S.docLinks[d.유형]) || d.관련조문; }
 function knowledge(apps = S.approvals) {
-  const K = { ...B, 규칙: clone(B.규칙), 조문: clone(B.조문), 가이드: clone(B.가이드), 해석: clone(B.해석 || []), 수량: {} };
+  const K = { ...B, 규칙: clone(B.규칙), 조문: clone(B.조문), 가이드: clone(B.가이드), 해석: clone(B.해석 || []), 의무: clone(B.의무 || []), 수량: {} };
   const approvedNotices = new Set();
   for (const a of apps) {
     if (a.notice) approvedNotices.add(a.notice);
     if (a.종류 === '확인') continue;
     if (a.종류 === '수량기준') { (K.수량[a.CAS] ||= []).push({ 시행일: a.시행일, 하위: Number(a.값), 승인: a.승인자 }); continue; }
     if (a.종류 === '새규칙') { K.규칙.push(clone(a.값)); continue; }
+    if (a.종류 === '의무편집') { const i = K.의무.findIndex(o => o.코드 === a.값.코드); if (i >= 0) K.의무[i] = clone(a.값); else K.의무.push(clone(a.값)); continue; }
+    if (a.종류 === '규칙분류') { const r0 = K.규칙.find(x => x.id === a.규칙); if (r0) { r0.의무분류 = a.값.의무분류; r0.연관분류 = a.값.연관분류 || []; } continue; }
     if (a.종류 === '해석편집') { const i = K.해석.findIndex(g => g.id === a.값.id); if (i >= 0) K.해석[i] = clone(a.값); else K.해석.push(clone(a.값)); continue; }
     if (a.종류 === '가이드편집') { const i = K.가이드.findIndex(g => g.코드 === a.값.코드); if (i >= 0) K.가이드[i] = clone(a.값); else K.가이드.push(clone(a.값)); continue; }
     const r = K.규칙.find(x => x.id === a.규칙);
@@ -213,7 +215,7 @@ function analyze(n) {
 
 // ---------------------------------------------------------------- 초기 상태 (시연용: 일부 고시는 이미 진행 중)
 function seed() {
-  S = { v: 7, review: {}, notices: {}, approvals: [], prop: {}, log: [], checked: null };
+  S = { v: 8, review: {}, notices: {}, approvals: [], prop: {}, log: [], checked: null };
   for (const n of NOTICES.filter(n => n.초기상태)) {
     const st = n.초기상태;
     (n.규칙제안 || []).forEach((p, i) => { if (!st.규칙승인) return; S.prop[`${n.id}:${i}`] = '승인'; S.approvals.push({ notice: n.id, idx: i, 규칙: p.규칙, 종류: p.종류, 값: p.제안, CAS: p.CAS, 시행일: p.시행일, 근거: p.근거, 승인자: st.승인자, 일시: st.분석일 + ' 15:00', 의견: '개정 조문과 일치 확인' }); });
@@ -241,7 +243,7 @@ function seed() {
   save();
 }
 try { S = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { S = null; }
-if (!S || S.v !== 7) seed();
+if (!S || S.v !== 8) seed();
 K = knowledge();
 
 function nstate(n) {
@@ -524,7 +526,7 @@ function taskRow(x, i) {
     ${!wait && x.판단자 ? `<div class="small muted" style="margin-top:3px">확인: ${esc(x.판단자)}</div>` : ''}`;
   return `<tr class="${over ? 'over' : ''} ${na ? 'na' : ''}" data-i="${i}">
     <td>${sitePill(x.사업장)}</td>
-    <td><span class="pill line">${esc(x.구분)}</span><br>${src}</td>
+    <td><span class="pill line">${esc(x.구분)}</span><br>${src}${(o0 => o0 ? `<div style="margin-top:3px">${oblPill(o0)}</div>` : '')(taskObl(x))}</td>
     <td><b>${esc(x.대상)}</b><div class="muted">${esc(x.영향)}</div>${recs}</td>
     <td class="act">${esc(x.조치)}${link ? `<div>${link}</div>` : ''}</td>
     <td>${judge}</td>
@@ -935,6 +937,7 @@ function interpHtml(iid) {
 function newRuleHtml() {
   return `<div class="result" style="background:#fff;border-color:var(--orange)"><h3>새 점검 규칙 추가 (체크리스트형)</h3>
     <div class="field"><span>규칙 이름</span><input type="text" id="nrName" style="width:100%" placeholder="예: 저장탱크 방류벽 점검 항목"></div>
+    <div class="field"><span>의무 분류 (세부 업무)</span>${oblSelect('nrObl', 'C06-1')}</div>
     <div class="field"><span>근거 조문</span>${citeSelect('nrCite')}</div>
     <div class="field"><span>점검 항목 (한 줄에 하나)</span><textarea id="nrItems" placeholder="방류벽 용량 110% 이상&#10;배수 밸브 평상시 잠금&#10;방류벽 내부 균열 없음"></textarea></div>
     <div class="row"><label class="row small">시행일 <input type="date" id="nrDate" value="${base()}"></label><button class="btn green" data-act="nr-save">규칙 추가</button><button class="btn ghost" data-act="cancel">취소</button></div></div>`;
@@ -1031,7 +1034,7 @@ function kxAct(a, v) {
       const name = $('nrName').value.trim(), items = $('nrItems').value.split('\n').map(x => x.trim()).filter(Boolean);
       if (!name || !items.length) return toast('규칙 이름과 점검 항목을 입력하세요');
       const nid = `R-NEW-${S.approvals.filter(x => x.종류 === '새규칙').length + 1}`;
-      const rule = { id: nid, 이름: name, 유형: '체크리스트', 대상: '점검', 설명: '전문가가 직접 추가한 점검 규칙', 버전: [{ 버전: 1, 시행일: $('nrDate').value, 폐지일: null, 승인: '김지훈 승인 (직접 추가)', 근거: [$('nrCite').value].filter(Boolean), 필수항목: items, 결과: { 조치: '미충족 항목 보완' } }] };
+      const rule = { id: nid, 이름: name, 유형: '체크리스트', 의무분류: $('nrObl').value, 연관분류: [], 대상: '점검', 설명: '전문가가 직접 추가한 점검 규칙', 버전: [{ 버전: 1, 시행일: $('nrDate').value, 폐지일: null, 승인: '김지훈 승인 (직접 추가)', 근거: [$('nrCite').value].filter(Boolean), 필수항목: items, 결과: { 조치: '미충족 항목 보완' } }] };
       log(`새 점검 규칙 추가: ${nid} ${name} (${items.length}개 항목)`);
       ED.sel = nid;
       return done(`${nid} 규칙을 추가했습니다 — 그래프에 연결되었습니다`, { notice: null, 규칙: nid, 종류: '새규칙', 값: rule, 시행일: rule.버전[0].시행일, 승인자: '김지훈', 일시: nowStr() });
@@ -1203,7 +1206,8 @@ function runJudge() {
     return `<div class="result hit"><h3><span class="pill red">대상</span> ${esc(r.조치)}</h3>
       <div class="kv"><b>제출 기한</b><span>${r.기한 ? `<b style="color:var(--red)">${esc(r.기한)}</b> (${dday(r.기한)}) · ${esc(r.기한설명)}` : '<span class="muted">기준일 미입력</span>'}${adv ? `<br><span style="color:var(--orange);font-weight:700">권고 ${esc(adv.기한)} (${dday(adv.기한)})</span> <span class="small">— 미확정 개정안 기준·잠정${pn ? ` (${esc(pn.id)}, <a href="#" data-p7="P|${pn.id}|${pn.규칙제안.findIndex(q => q.규칙 === r.규칙)}">②에서 확정</a>)` : ''}</span>` : ''}</span>
       <b>제출처</b><span>${esc(r.제출처)}</span><b>서식</b><span>${esc(r.서식)}</span><b>해당 사유</b><span>${r.사유.map(m => esc(m.설명)).join(', ')}</span>
-      <b>적용 규칙</b><span><span class="pill navy">${esc(r.규칙)} v${r.버전}</span> ${ruleBadge(r.규칙)} 시행 ${esc(r.시행일)}</span></div>
+      <b>적용 규칙</b><span><span class="pill navy">${esc(r.규칙)} v${r.버전}</span> ${ruleBadge(r.규칙)} 시행 ${esc(r.시행일)}</span>
+      <b>의무 · 미이행 시</b><span>${ruleObl(r.규칙) ? `${oblPill(ruleObl(r.규칙))} ${penHtml(oblOf(ruleObl(r.규칙)))}` : '-'}</span></div>
       <details><summary>근거 조문 원문 보기</summary>${citeHtml(r.근거)}</details>
       ${intOf(r.규칙).length ? `<details open><summary>관련 해석·판단 ${intOf(r.규칙).length}건</summary>${intCards(intOf(r.규칙))}</details>` : ''}</div>`;
   }).join('') + `<p class="muted small">→ 실제 시스템에서는 이 결과로 변경관리(MOC) 건이 등록되고, 제출 기한이 조치 목록과 담당자 알림에 반영됩니다.</p>`;
@@ -1348,9 +1352,102 @@ $('srcModal').onclick = e => { if (e.target.id === 'srcModal') $('srcModal').cla
 document.addEventListener('click', e => { const p7 = e.target.closest('[data-p7]'); if (p7) { e.preventDefault(); openReview(p7.dataset.p7); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('srcModal').classList.add('hidden'); });
 
+// ================================================================ 의무 분류 (의무 10개 × 세부 업무, 미이행 시 벌칙)
+const OBL_CLR = '#0F766E';
+const PEN_CLR = { 형벌: 'red', 과태료: 'orange', 행정처분: 'navy', 과징금: 'purple' };
+const PEN_KINDS = ['형벌', '과태료', '행정처분', '과징금'];
+const topOf = code => (code || '').split('-')[0];
+const oblTop = code => (K.의무 || []).find(o => o.코드 === topOf(code));
+const oblSubs = () => (K.의무 || []).flatMap(o => (o.세부 || []).map(s0 => ({ ...s0, 상위: o })));
+function oblOf(code) { if (!code) return null; if (!code.includes('-')) return oblTop(code); const t = oblTop(code); const s0 = t && (t.세부 || []).find(x => x.코드 === code); return s0 ? { ...s0, 상위: t } : null; }
+const penHtml = (s0, short) => { const p = s0 && s0.벌칙; if (!p) return '<span class="muted small">-</span>';
+  const kinds = (p.종류 || []).map(k => `<span class="pill ${PEN_CLR[k] || 'gray'}" style="font-size:11px">${esc(k)}</span>`).join(' ');
+  const st = p.상태 === '확인 완료' ? `<span class="pill green" style="font-size:10.5px">확인 완료${p.확인자 ? ' · ' + esc(p.확인자) : ''}</span>` : '<span class="pill gray" style="font-size:10.5px" title="AI 초안 — 조문·금액은 최신 벌칙·과태료 별표로 컨설턴트 확인 필요">AI 초안·확인 필요</span>';
+  return `${kinds || '<span class="pill gray" style="font-size:11px">직접 벌칙 없음</span>'} ${short ? '' : `<span class="small">${esc(p.내용 || '')}</span> `}${st}`; };
+const oblPill = code => { const o = oblOf(code); if (!o) return ''; const pen = o.벌칙 ? ` · 미이행 시: ${(o.벌칙.종류 || []).join('·') || '직접 벌칙 없음'} — ${o.벌칙.내용 || ''}` : '';
+  return `<span class="pill" style="background:${OBL_CLR};font-size:11px" title="${esc((o.상위 ? o.상위.코드 + ' ' + o.상위.이름 + ' › ' : '') + o.이름 + pen)}">${esc(o.코드)} ${esc(o.이름)}</span>`; };
+const ruleObl = id => id === '수량기준' ? 'C01-2' : (K.규칙.find(r => r.id === id) || {}).의무분류 || null;
+const DOC_OBL = { PLAN: 'C02-2', MOC: 'C02-3', QTY: 'C01-2', LABEL: 'C06-3', LABELFM: 'C06-3', INSP: 'C04-2', ER: 'C10-1', TR: 'C08-3' };
+function taskObl(x) {
+  if (x.규칙키) return ruleObl(x.규칙키);
+  if (x.구분 === '문서') { const site = SITES.find(s0 => s0.id === x.사업장); const d = site?.문서.find(y => y.id === x.문서); return d ? DOC_OBL[d.유형] || null : null; }
+  return { '설비 변경': 'C02-3', 물질: 'C01-2', 시설: 'C04-2', 교육: 'C08-3', '신고·제출': 'C02-3' }[x.구분] || null;
+}
+const oblSelect = (id, cur, withEmpty) => `<select id="${id}">${withEmpty && !cur ? '<option value="" selected>미분류</option>' : ''}${(K.의무 || []).filter(o => o.상태 !== '폐지').map(o => `<optgroup label="${esc(o.코드 + ' ' + o.이름)}">${(o.세부 || []).filter(s0 => s0.상태 !== '폐지' || s0.코드 === cur).map(s0 => `<option value="${s0.코드}" ${s0.코드 === cur ? 'selected' : ''}>${esc(s0.코드)} ${esc(s0.이름)}</option>`).join('')}</optgroup>`).join('')}</select>`;
+const rulesOf = code => K.규칙.filter(r => code.includes('-') ? r.의무분류 === code : topOf(r.의무분류) === code);
+const rstat = code => { const rs = rulesOf(code); return { n: rs.length, ok: rs.filter(r => rvOf(r).상태 === '확정').length }; };
+let OB = { edit: null, open: false };
+function renderObl() {
+  const box = $('oblCard'); if (!box) return;
+  const list = K.의무 || [], act = list.filter(o => o.상태 !== '폐지');
+  const subsAll = act.flatMap(o => (o.세부 || []).filter(s0 => s0.상태 !== '폐지'));
+  const subsCov = subsAll.filter(s0 => rulesOf(s0.코드).length).length;
+  const penOk = subsAll.filter(s0 => s0.벌칙?.상태 === '확인 완료').length;
+  const e = OB.edit;
+  const subRow = (o, s0) => { const st = rstat(s0.코드); return `<tr style="${s0.상태 === '폐지' ? 'opacity:.5' : ''}"><td style="padding-left:18px"><b>${esc(s0.코드)}</b></td><td><b>${esc(s0.이름)}</b>${s0.사용자 ? ' <span class="pill gray" style="font-size:10.5px">추가</span>' : ''}${s0.상태 === '폐지' ? ' <span class="pill gray">폐지</span>' : ''}<div class="small muted">${esc(s0.설명 || '')}</div></td>
+    <td><span class="pill ${s0.유형 === '판정형' ? 'navy' : 'line'}" style="font-size:11px">${esc(s0.유형 || '-')}</span></td><td class="small">${esc(s0.근거 || '')}</td><td style="min-width:240px">${penHtml(s0)}</td>
+    <td>${st.n ? `<b>${st.ok}</b> / ${st.n}` : `<span style="color:${s0.유형 === '판정형' ? 'var(--red)' : 'var(--sub)'}">${s0.유형 === '판정형' ? '없음' : '-'}</span>`}</td><td><button class="btn ghost sm" data-ob="esub" data-v="${esc(s0.코드)}">편집</button></td></tr>`; };
+  box.innerHTML = `<div class="row between"><div><h2 style="margin:0">의무 분류 <span class="muted small">— 화관법 의무 ${act.length}개 · 세부 업무 ${subsAll.length}개</span></h2>
+      <p class="desc" style="margin:4px 0 0">규칙이 있는 세부 업무 <b>${subsCov}/${subsAll.length}</b> · 벌칙 확인 완료 <b>${penOk}/${subsAll.length}</b> · 법규 담당자·컨설턴트가 의무·세부 업무·벌칙을 추가하고 고칠 수 있습니다.</p></div>
+      <div class="row"><button class="btn ghost sm" data-ob="toggle">${OB.open ? '접기' : '세부 업무·벌칙 보기'}</button><button class="btn blue sm" data-ob="ntop">+ 의무 추가</button></div></div>
+    <div class="chips" style="margin:10px 0 0">${list.map(o => { const st = rstat(o.코드), ss = (o.세부 || []).filter(s0 => s0.상태 !== '폐지'), cov = ss.filter(s0 => rulesOf(s0.코드).length).length;
+      return `<span class="chip" style="${o.상태 === '폐지' ? 'opacity:.5' : ''};border-color:${st.n ? OBL_CLR : 'var(--line)'}" title="${esc(o.설명 || '')}"><b style="color:${OBL_CLR}">${esc(o.코드)}</b> ${esc(o.이름)} <b style="color:${st.n ? (st.ok === st.n ? 'var(--green)' : 'var(--orange)') : 'var(--red)'}">${st.n ? `규칙 ${st.ok}/${st.n}` : '규칙 없음'}</b> <span class="small muted">세부 ${cov}/${ss.length}</span>${o.사용자 ? ' <span class="small muted">추가</span>' : ''}</span>`; }).join('')}</div>
+    ${OB.open ? `<div class="scroll" style="margin-top:10px"><table><tr><th>코드</th><th>의무 · 세부 업무</th><th>유형</th><th>대표 근거</th><th>미이행 시 벌칙</th><th>규칙 (확정/전체)</th><th></th></tr>${list.map(o => `<tr style="background:#EEF6F5;${o.상태 === '폐지' ? 'opacity:.5' : ''}"><td><b style="color:${OBL_CLR}">${esc(o.코드)}</b></td><td colspan="4"><b>${esc(o.이름)}</b>${o.사용자 ? ` <span class="pill gray" style="font-size:10.5px">추가 · ${esc(o.등록자 || '')}</span>` : ''}${o.상태 === '폐지' ? ' <span class="pill gray">폐지</span>' : ''} <span class="small muted">${esc(o.설명 || '')}</span></td><td>${(s => s.n ? `<b>${s.ok}</b> / ${s.n}` : '-')(rstat(o.코드))}</td><td style="white-space:nowrap"><button class="btn ghost sm" data-ob="etop" data-v="${esc(o.코드)}">편집</button> <button class="btn ghost sm" data-ob="nsub" data-v="${esc(o.코드)}">+ 세부</button></td></tr>` + (o.세부 || []).map(s0 => subRow(o, s0)).join('')).join('')}</table>
+      <p class="muted small" style="margin:6px 0 0">벌칙은 AI 초안입니다. 컨설턴트가 최신 벌칙·과태료 별표(조문·금액)로 확인한 뒤 편집에서 '확인 완료'로 바꾸세요. 판정형 세부 업무에 규칙이 없으면 빨간색으로 표시합니다.</p></div>` : ''}
+    ${e ? oblForm(e) : ''}`;
+}
+function oblForm(e) {
+  const isSub = e.종류 === 'sub', v = e.값, who = `<select id="obWho">${personOpts('박정민', 'HQ')}</select>`;
+  return `<div class="result" style="background:#fff;border-color:var(--blue);margin-top:10px"><h3>${e.새 ? (isSub ? `세부 업무 추가 — ${esc(e.상위)} ${esc(oblTop(e.상위)?.이름 || '')}` : '의무 추가') : `${isSub ? '세부 업무' : '의무'} 편집 — ${esc(v.코드)}`}</h3>
+    <div class="kv"><b>코드</b><span><code>${esc(v.코드)}</code> <span class="muted small">(자동 부여)</span></span>
+      <b>이름</b><span><input type="text" id="obName" value="${esc(v.이름 || '')}" style="width:340px" placeholder="${isSub ? '예: 운반차량 표시' : '예: 유해화학물질 운반'}"></span>
+      <b>설명</b><span><input type="text" id="obDesc" value="${esc(v.설명 || '')}" style="width:100%"></span>
+      ${isSub ? `<b>유형</b><span><select id="obType"><option ${v.유형 === '판정형' ? 'selected' : ''}>판정형</option><option ${v.유형 !== '판정형' ? 'selected' : ''}>관리형</option></select> <span class="muted small">판정형: 규칙으로 해당 여부·기한 판정 / 관리형: 일정·기록·증빙 관리</span></span>
+      <b>대표 근거</b><span><input type="text" id="obCite" value="${esc(v.근거 || '')}" style="width:100%" placeholder="예: 법 제15조"></span>
+      <b>미이행 시 벌칙</b><span>${PEN_KINDS.map(k => `<label class="small" style="margin-right:8px"><input type="checkbox" data-pen="${k}" ${(v.벌칙?.종류 || []).includes(k) ? 'checked' : ''}> ${k}</label>`).join('')}
+        <input type="text" id="obPen" value="${esc(v.벌칙?.내용 || '')}" style="width:100%;margin-top:4px" placeholder="예: 미제출 시 과태료 ○○만원 이하 (법 제○○조, 시행령 별표 ○)"></span>
+      <b>벌칙 확인</b><span><select id="obPenSt"><option ${v.벌칙?.상태 !== '확인 완료' ? 'selected' : ''}>AI 초안</option><option ${v.벌칙?.상태 === '확인 완료' ? 'selected' : ''}>확인 완료</option></select> <span class="muted small">조문·금액을 최신 법령으로 확인했으면 '확인 완료'</span></span>` : ''}
+      <b>${e.새 ? '등록자' : '수정자'}</b><span>${who}</span>
+      <b>사유</b><span><input type="text" id="obWhy" style="width:100%" placeholder="예: 운반 관련 지적이 늘어 별도 관리"></span>
+      ${e.새 ? '' : `<b>상태</b><span><select id="obSt"><option ${v.상태 !== '폐지' ? 'selected' : ''}>사용 중</option><option ${v.상태 === '폐지' ? 'selected' : ''}>폐지</option></select> <span class="muted small">규칙이 연결되어 있으면 폐지할 수 없음</span></span>`}</div>
+    <div class="row"><button class="btn green" data-ob="save">저장</button><button class="btn ghost" data-ob="cancel">취소</button></div></div>`;
+}
+$('oblCard') && ($('oblCard').onclick = e => {
+  const b = e.target.closest('[data-ob]'); if (!b) return;
+  const a = b.dataset.ob, v = b.dataset.v;
+  if (a === 'toggle') { OB.open = !OB.open; return renderObl(); }
+  if (a === 'ntop') { const n0 = Math.max(0, ...(K.의무 || []).map(o => +o.코드.slice(1) || 0)) + 1; OB.edit = { 종류: 'top', 새: true, 값: { 코드: 'C' + String(n0).padStart(2, '0'), 세부: [] } }; OB.open = true; return renderObl(); }
+  if (a === 'nsub') { const t = oblTop(v), n0 = Math.max(0, ...(t.세부 || []).map(s0 => +s0.코드.split('-')[1] || 0)) + 1; OB.edit = { 종류: 'sub', 새: true, 상위: v, 값: { 코드: `${v}-${n0}`, 유형: '관리형', 벌칙: { 종류: [], 내용: '' } } }; return renderObl(); }
+  if (a === 'etop') { OB.edit = { 종류: 'top', 값: clone(oblTop(v)) }; return renderObl(); }
+  if (a === 'esub') { const s0 = oblOf(v); delete s0.상위; OB.edit = { 종류: 'sub', 상위: topOf(v), 값: clone(s0) }; return renderObl(); }
+  if (a === 'cancel') { OB.edit = null; return renderObl(); }
+  if (a === 'save') {
+    const E0 = OB.edit, name = $('obName').value.trim(), who = $('obWho').value, why = $('obWhy').value.trim();
+    if (!name) return toast('이름을 입력하세요');
+    const st = $('obSt') ? $('obSt').value : '사용 중', code = E0.값.코드;
+    if (st === '폐지' && rulesOf(code).length) return toast('연결된 규칙이 있어 폐지할 수 없습니다. 규칙 분류를 먼저 바꾸세요');
+    let top;
+    if (E0.종류 === 'top') {
+      if ((K.의무 || []).some(o => o.이름 === name && o.코드 !== code)) return toast('같은 이름의 의무가 이미 있습니다');
+      top = { ...clone(E0.값), 이름: name, 설명: $('obDesc').value.trim(), 상태: st };
+      if (E0.새) Object.assign(top, { 사용자: true, 등록자: who, 등록일: base() }); else Object.assign(top, { 수정자: who, 수정일: base() });
+    } else {
+      top = clone(oblTop(E0.상위));
+      const s0 = { ...clone(E0.값), 이름: name, 설명: $('obDesc').value.trim(), 유형: $('obType').value, 근거: $('obCite').value.trim(), 상태: st,
+        벌칙: { 종류: [...document.querySelectorAll('[data-pen]:checked')].map(x => x.dataset.pen), 내용: $('obPen').value.trim(), 상태: $('obPenSt').value } };
+      if (s0.벌칙.상태 === '확인 완료') { s0.벌칙.확인자 = who; s0.벌칙.확인일 = base(); }
+      if (E0.새) Object.assign(s0, { 사용자: true, 등록자: who, 등록일: base() }); else Object.assign(s0, { 수정자: who, 수정일: base() });
+      const i = top.세부.findIndex(x => x.코드 === s0.코드); if (i >= 0) top.세부[i] = s0; else top.세부.push(s0);
+    }
+    S.approvals.push({ notice: null, 종류: '의무편집', 값: top, 시행일: base(), 승인자: who, 일시: nowStr(), 의견: why });
+    log(`의무 분류 ${E0.새 ? '추가' : '수정'}: ${code} ${name}${st === '폐지' ? ' (폐지)' : ''}${why ? ' — ' + why : ''}`, who);
+    save(); K = knowledge(); OB.edit = null; toast(`${code} ${name} ${E0.새 ? '추가' : '저장'}했습니다`); return renderReview();
+  }
+});
+
 // ================================================================ ② 규칙 검토·확정
 const RV_ST = { 'AI 초안': 'gray', '검토 중': 'orange', '수정 요청': 'red', '확정': 'green', '반려': 'red' };
-let RV = { sel: null, filter: '' };
+let RV = { sel: null, filter: '', group: '의무' };
 function rvOf(r) {
   S.review ||= {};
   const base0 = latest(r).검토 || {};
@@ -1406,10 +1503,11 @@ function renderPropDetail(key) {
   const field = p.종류 === '확인' ? `<span>${esc(p.제안)}</span>` : `<input type="${p.종류 === '필수항목추가' ? 'text' : 'number'}" id="ppv" value="${esc(a ? a.값 : p.제안)}" ${locked ? 'disabled' : ''} style="width:${p.종류 === '필수항목추가' ? 220 : 100}px">`;
   $('rvDetail').innerHTML = `
     <div class="result ${locked ? '' : 'hit'}" style="${locked ? 'background:#fff' : ''}">
-      <div class="row between"><h3 style="margin:0">${rule ? `${esc(rule.id)} ${esc(rule.이름)}` : '물질별 규정수량 표'} <span class="pill gray">${esc(p.종류)}</span> ${propPill(n, i)}</h3>
+      <div class="row between"><h3 style="margin:0">${rule ? `${esc(rule.id)} ${esc(rule.이름)}` : '물질별 규정수량 표'} <span class="pill gray">${esc(p.종류)}</span> ${oblPill(ruleObl(p.규칙))} ${propPill(n, i)}</h3>
         <button class="btn ghost sm" data-pgo4="${n.id}">⑤ 신·구 비교 ↗</button></div>
       <p class="muted" style="margin:6px 0">${esc(p.설명)}</p>
       <div class="kv"><b>감지 고시</b><span>${esc(n.제목)}</span><b>공포·시행</b><span>공포 ${esc(n.공포일)} · 시행 ${esc(n.시행일)} · 감지 ${esc(n.감지일)} (${esc(n.감지경로)})</span>
+        <b>미이행 시 벌칙</b><span>${ruleObl(p.규칙) ? `${oblPill(ruleObl(p.규칙))} ${penHtml(oblOf(ruleObl(p.규칙)))}` : '-'}</span>
         <b>확정 전 판정</b><span>기존 <b>확정 규칙</b>으로 공식 판정합니다. 이 변경안은 ①④⑦에서 <b style="color:var(--orange)">권고 일정</b>(더 이른 기한)으로만 표시됩니다.${linked.length ? ` 현재 권고 표시 중인 조치 ${linked.length}건.` : ''}${!locked && d <= 60 ? ` <b style="color:var(--red)">시행 ${d >= 0 ? 'D-' + d : '경과'} — 확정이 필요합니다.</b>` : ''}</span></div>
     </div>
     <div class="result" style="background:#fff"><h3>바뀐 조문 (신·구)</h3>${n.변경조문.map(c => `<div style="margin-bottom:10px"><div class="row" style="margin-bottom:4px"><b style="color:var(--navy)">${esc(c.조문)}</b><span class="muted">${esc(c.제목)}</span>${srcBtn(c.id)}</div>${cmpBox(c.구, c.신, '개정 전', `개정 후 (시행 ${n.시행일})`)}</div>`).join('')}</div>
@@ -1426,6 +1524,8 @@ function renderPropDetail(key) {
     </div>`;
 }
 function renderReview() {
+  renderObl();
+  if ($('rvGroup')) $('rvGroup').value = RV.group;
   const all = K.규칙.map(r => ({ r, rv: rvOf(r) }));
   const cnt = s0 => all.filter(x => x.rv.상태 === s0).length;
   const done = cnt('확정');
@@ -1434,12 +1534,19 @@ function renderReview() {
     ].map(([v, l, a]) => `<div class="kpi ${a ? 'alert' : ''}"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
   const pend = all.length - done + pp; $('rvDot').textContent = pend; $('rvDot').classList.toggle('hidden', !pend);
   const list = all.filter(x => !RV.filter || x.rv.상태 === RV.filter);
-  const groups = {};
+  const groups = {}, ghead = {};
   const pl = PI.filter(x => !RV.filter || propRvSt(x.st) === RV.filter);
-  if (pl.length) groups['개정 반영 대기 (AI 추천 · 모니터링 고시)'] = [];
-  list.forEach(x => (groups[x.r.출처고시 ? x.r.출처고시.split('(')[0].split(' 제')[0].trim() : '화학물질관리법·시행규칙 (기존 규칙)'] ||= []).push(x));
-  $('rvList').innerHTML = Object.entries(groups).map(([g, xs]) => `<div class="kxh">${esc(g)}</div>` + (g.startsWith('개정 반영') ? pl.map(x => `<div class="kxi ${RV.sel === x.key ? 'on' : ''}" data-rv="${x.key}"><i style="background:${TYPE_COLOR.고시}"></i><div style="flex:1"><div class="row between"><b>${esc(x.n.id)}</b>${propPill(x.n, x.i).replace(/AI 추천 · 개정 반영 대기 /, '대기 ')}</div><div class="small">${esc(x.p.항목)}</div><div class="muted small">${esc(x.p.규칙)} · ${esc(x.p.현행)} → ${esc(x.p.제안)}</div></div></div>`) : xs.map(({ r, rv }) =>
-    `<div class="kxi ${RV.sel === r.id ? 'on' : ''}" data-rv="${r.id}"><i style="background:${TYPE_COLOR.규칙}"></i><div style="flex:1"><div class="row between"><b>${esc(r.id)}</b><span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></div><div class="small">${esc(r.이름)}</div><div class="muted small">${esc(r.유형)} · v${latest(r).버전}</div></div></div>`)).join('')).join('') || '<p class="muted">해당 상태의 규칙이 없습니다.</p>';
+  const PG = '개정 반영 대기 (AI 추천 · 모니터링 고시)';
+  if (pl.length) groups[PG] = [];
+  if (RV.group === '의무') {
+    (K.의무 || []).forEach(o => { const rs = all.filter(x => topOf(x.r.의무분류) === o.코드); if (o.상태 === '폐지' && !rs.length) return; if (RV.filter && !list.some(x => topOf(x.r.의무분류) === o.코드)) return; const k = `${o.코드} ${o.이름}`; groups[k] = []; ghead[k] = `<span style="color:${OBL_CLR}">${esc(k)}</span> <span class="small" style="float:right;color:${rs.length ? (rs.every(x => x.rv.상태 === '확정') ? 'var(--green)' : 'var(--orange)') : 'var(--red)'}">${rs.length ? `확정 ${rs.filter(x => x.rv.상태 === '확정').length} / 전체 ${rs.length}` : '규칙 없음'}</span>`; });
+    list.slice().sort((a0, b0) => (a0.r.의무분류 || 'Z').localeCompare(b0.r.의무분류 || 'Z', undefined, { numeric: true })).forEach(x => { const o = oblTop(x.r.의무분류); (groups[o ? `${o.코드} ${o.이름}` : '미분류'] ||= []).push(x); });
+  } else {
+    list.forEach(x => (groups[x.r.출처고시 ? x.r.출처고시.split('(')[0].split(' 제')[0].trim() : '화학물질관리법·시행규칙 (기존 규칙)'] ||= []).push(x));
+    Object.keys(groups).filter(k => k !== PG).forEach(k => { const rs = all.filter(x => groups[k].some(y => y.r.id === x.r.id)); ghead[k] = `${esc(k)} <span class="small" style="float:right">확정 ${rs.filter(x => x.rv.상태 === '확정').length} / 전체 ${rs.length}</span>`; });
+  }
+  $('rvList').innerHTML = Object.entries(groups).map(([g, xs]) => `<div class="kxh">${ghead[g] || esc(g)}</div>` + (g.startsWith('개정 반영') ? pl.map(x => `<div class="kxi ${RV.sel === x.key ? 'on' : ''}" data-rv="${x.key}"><i style="background:${TYPE_COLOR.고시}"></i><div style="flex:1"><div class="row between"><b>${esc(x.n.id)}</b>${propPill(x.n, x.i).replace(/AI 추천 · 개정 반영 대기 /, '대기 ')}</div><div class="small">${esc(x.p.항목)}</div><div class="muted small">${esc(x.p.규칙)} · ${esc(x.p.현행)} → ${esc(x.p.제안)}${ruleObl(x.p.규칙) ? ` · ${esc(ruleObl(x.p.규칙))} ${esc(oblOf(ruleObl(x.p.규칙))?.이름 || '')}` : ''}</div></div></div>`) : xs.map(({ r, rv }) =>
+    `<div class="kxi ${RV.sel === r.id ? 'on' : ''}" data-rv="${r.id}"><i style="background:${TYPE_COLOR.규칙}"></i><div style="flex:1"><div class="row between"><b>${esc(r.id)}</b><span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></div><div class="small">${esc(r.이름)}</div><div class="muted small">${esc(r.유형)} · v${latest(r).버전}${r.의무분류 ? ` · <b style="color:${OBL_CLR}">${esc(r.의무분류)}</b> ${esc(oblOf(r.의무분류)?.이름 || '')}` : ''}${RV.group === '고시' ? '' : ''}</div></div></div>`)).join('') + (RV.group === '의무' && g !== PG ? (t0 => { const t = oblTop(g.split(' ')[0]); if (!t) return ''; const miss = (t.세부 || []).filter(s0 => s0.상태 !== '폐지' && !rulesOf(s0.코드).length); return miss.length ? `<div class="muted small" style="padding:2px 10px 8px">규칙 없는 세부 업무 ${miss.length}개: ${miss.map(s0 => `<span title="${esc(s0.이름)} (${esc(s0.유형)})" style="${s0.유형 === '판정형' ? 'color:var(--red)' : ''}">${esc(s0.코드)}</span>`).join(' ')}</div>` : ''; })() : '')).join('') || '<p class="muted">해당 상태의 규칙이 없습니다.</p>';
   const isP = RV.sel && RV.sel.startsWith('P|');
   if (!RV.sel || (isP ? !PI.some(x => x.key === RV.sel) : !K.규칙.some(r => r.id === RV.sel))) { const p0 = pl.find(x => !x.st); RV.sel = p0 ? p0.key : (list.find(x => x.rv.상태 !== '확정') || list[0] || all[0]).r.id; }
   if (RV.sel.startsWith('P|')) renderPropDetail(RV.sel); else renderRvDetail();
@@ -1454,7 +1561,11 @@ function renderRvDetail() {
       <div class="row between"><h3 style="margin:0">${esc(r.id)} ${esc(r.이름)} <span class="pill gray">${esc(r.유형)}</span> <span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></h3>
         <div class="row"><button class="btn ghost sm" data-rvgo="${r.id}">⑤에서 수정·편집 ↗</button></div></div>
       <p class="muted" style="margin:6px 0">${esc(r.설명)}</p>
-      <div class="kv"><b>출처 고시</b><span>${esc(r.출처고시 || '화학물질관리법·시행규칙 (발췌)')}</span><b>작성</b><span>${esc(M.작성 || '-')} · ${esc(M.작성일 || '')} · v${v.버전} (시행 ${v.시행일})</span><b>AI 요약</b><span>${esc(M.요약 || '-')}</span></div>
+      <div class="kv"><b>의무 분류</b><span>${oblSelect('rvObl', r.의무분류, true)}
+          <span class="small muted">연관 의무</span> ${(K.의무 || []).filter(o => o.상태 !== '폐지').map(o => `<label class="small" style="white-space:nowrap" title="${esc(o.이름)}"><input type="checkbox" data-rvrel="${o.코드}" ${(r.연관분류 || []).includes(o.코드) ? 'checked' : ''}>${esc(o.코드)}</label>`).join(' ')}
+          <button class="btn ghost sm" data-rvact="obl">분류 저장</button></span>
+        <b>미이행 시 벌칙</b><span>${r.의무분류 ? penHtml(oblOf(r.의무분류)) : '<span class="muted small">의무 분류를 지정하세요</span>'}</span>
+        <b>출처 고시</b><span>${esc(r.출처고시 || '화학물질관리법·시행규칙 (발췌)')}</span><b>작성</b><span>${esc(M.작성 || '-')} · ${esc(M.작성일 || '')} · v${v.버전} (시행 ${v.시행일})</span><b>AI 요약</b><span>${esc(M.요약 || '-')}</span></div>
     </div>
     <div class="result" style="background:#fff"><h3>규칙 내용</h3>${ruleBody(r, v, false)}</div>
     <div class="result" style="background:#fff"><h3>근거 원문 (고시·법령) <span class="muted small">— 📄 원문 페이지를 누르면 원본 문서의 해당 쪽을 표시</span></h3>${citeHtml(cite0(v.근거))}</div>
@@ -1474,6 +1585,7 @@ function renderRvDetail() {
 }
 function cite0(ids) { return [...new Set(ids)].map(id => { const vs = K.조문[id] || []; const a = vs.find(x => !x.폐지일) || vs[vs.length - 1]; return a ? { id, 조문: label(a), 법령: a.법령명, 시행일: a.시행일, 내용: a.내용 } : { id, 조문: id, 법령: '', 시행일: '', 내용: '(조문 없음)' }; }); }
 $('rvList') && ($('rvList').onclick = e => { const x = e.target.closest('[data-rv]'); if (x) { RV.sel = x.dataset.rv; renderReview(); } });
+$('rvGroup') && ($('rvGroup').onchange = e => { RV.group = e.target.value; renderReview(); });
 $('rvFilter') && ($('rvFilter').onchange = e => { RV.filter = e.target.value; RV.sel = null; renderReview(); });
 $('rvDetail') && ($('rvDetail').onchange = e => {
   if (e.target.id === 'ppv' || e.target.id === 'ppd') { const [, nid, si] = RV.sel.split('|'), n = NOTICES.find(x => x.id === nid), p = n.규칙제안[+si];
@@ -1499,6 +1611,12 @@ $('rvDetail') && ($('rvDetail').onclick = e => {
   }
   const a = e.target.closest('[data-rvact]'); if (!a) return;
   const r = K.규칙.find(x => x.id === RV.sel), rv = rvOf(r), act = a.dataset.rvact;
+  if (act === 'obl') {
+    const c = $('rvObl').value, rel = [...document.querySelectorAll('[data-rvrel]:checked')].map(x => x.dataset.rvrel).filter(x => x !== topOf(c));
+    if (!c) return toast('의무 분류를 선택하세요');
+    S.approvals.push({ notice: null, 규칙: r.id, 종류: '규칙분류', 값: { 의무분류: c, 연관분류: rel }, 시행일: base(), 승인자: '김지훈', 일시: nowStr() });
+    log(`규칙 ${r.id} 의무 분류 변경: ${r.의무분류 || '미분류'} → ${c}${rel.length ? ` (연관 ${rel.join(', ')})` : ''}`); save(); K = knowledge(); toast(`${r.id} 분류를 ${c} ${oblOf(c)?.이름}(으)로 저장했습니다`); return renderReview();
+  }
   if (act === 'reopen') { rv.상태 = '검토 중'; rv.이력 = [...(rv.이력 || []), { t: nowStr(), who: '김지훈', 상태: '확정 취소' }]; S.review[r.id] = rv; log(`규칙 ${r.id} 확정 취소 (재검토)`); save(); K = knowledge(); return renderReview(); }
   const who = $('rvWho').value, memo = $('rvMemo').value.trim();
   if (['수정 요청', '반려'].includes(act) && !memo) return toast('수정 요청·반려 사유를 검토 의견에 입력하세요');

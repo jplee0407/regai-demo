@@ -48,7 +48,7 @@
   .result.hit { border-color: var(--orange); background: var(--lorange); }
   .result h3 { margin: 0 0 6px; font-size: 15px; color: var(--navy); }
   .pill { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; color: #fff; background: var(--blue); margin-right: 4px; white-space: nowrap; }
-  .pill.red { background: var(--red); } .pill.green { background: var(--green); } .pill.orange { background: var(--orange); } .pill.gray { background: #9AA5B4; } .pill.navy { background: var(--navy); }
+  .pill.red { background: var(--red); } .pill.green { background: var(--green); } .pill.orange { background: var(--orange); } .pill.gray { background: #9AA5B4; } .pill.navy { background: var(--navy); } .pill.purple { background: #6B5BA8; color: #fff; }
   .pill.line { background: #fff; color: var(--blue); border: 1px solid var(--lblue); }
   .ai { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: #EDE7FB; color: #5B3FB5; }
   .man { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: #E7EEF8; color: var(--navy); }
@@ -288,9 +288,10 @@
   <!-- ② 규칙 검토·확정 -->
   <section id="t8" class="hidden">
     <div class="grid6" id="rvKpi"></div>
+    <div class="card" id="oblCard" style="margin-top:14px"></div>
     <div class="card" style="margin-top:14px">
       <div class="row between"><div><h2>규칙 검토·확정</h2><p class="desc" style="margin:0">AI가 만든 규칙 초안과, ③ 모니터링으로 감지된 고시의 <b>개정 반영 대기(AI 추천)</b> 변경안을 컨설턴트·전문가가 확인합니다. 공식 판정은 <b>확정</b>된 규칙만 사용하며, 확정 전 변경안은 권고 일정으로만 표시됩니다. 확정하면 관련 조치 기한이 자동으로 다시 계산됩니다.</p></div>
-        <div class="row"><select id="rvFilter"><option value="">전체 상태</option><option>AI 추천</option><option>AI 초안</option><option>검토 중</option><option>수정 요청</option><option>확정</option><option>반려</option></select><button class="btn ghost sm" id="rvExport">확정 규칙 내보내기 (JSON)</button></div></div>
+        <div class="row"><label class="small">묶어 보기 <select id="rvGroup"><option value="의무">의무별</option><option value="고시">출처 고시별</option></select></label><select id="rvFilter"><option value="">전체 상태</option><option>AI 추천</option><option>AI 초안</option><option>검토 중</option><option>수정 요청</option><option>확정</option><option>반려</option></select><button class="btn ghost sm" id="rvExport">확정 규칙 내보내기 (JSON)</button></div></div>
       <div class="grid2" style="grid-template-columns:300px 1fr;margin-top:12px">
         <div id="rvList" style="max-height:780px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px"></div>
         <div id="rvDetail"></div>
