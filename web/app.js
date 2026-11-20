@@ -32,6 +32,8 @@ const base = () => $('baseDate').value || today;
 const repo = B.빌드.저장소;
 $('buildinfo').textContent = `화학물질관리법·시행규칙 발췌 기반 · 가상 사업장 · 빌드 ${B.빌드.커밋} (${B.빌드.시각.slice(0, 16).replace('T', ' ')} UTC)`;
 const dday = d => { const n = daysBetween(base(), d); return n === 0 ? 'D-day' : n > 0 ? `D-${n}` : `D+${-n}`; };
+const personOptsShort = (sel, site) => { const ps = PEOPLE.filter(p => !site || p.사업장 === site || p.사업장 === 'HQ'); const g = {}; ps.forEach(p => (g[p.부서] ||= []).push(p));
+  return Object.entries(g).map(([d, xs]) => `<optgroup label="${esc(d)}">${xs.map(p => `<option value="${esc(p.이름)}" ${p.이름 === sel ? 'selected' : ''}>${esc(p.이름)}</option>`).join('')}</optgroup>`).join(''); };
 const personOpts = (sel, site) => PEOPLE.filter(p => !site || p.사업장 === site || p.사업장 === 'HQ').map(p => `<option value="${esc(p.이름)}" ${p.이름 === sel ? 'selected' : ''}>${esc(p.이름)} (${esc(p.부서)})</option>`).join('');
 const pickPerson = (부서, site) => { const ps = site.담당자; return (ps.find(p => p.부서 === 부서) || ps.find(p => p.부서 === '환경안전팀') || ps[0]).이름; };
 const shash = s => { let h = 2166136261; for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; } return h.toString(16).padStart(8, '0') + '····'; };
@@ -359,10 +361,31 @@ function runAnalysis(after) {
   };
   setTimeout(tick, 550);
 }
+function noticeSummary(n) {
+  const st = S.notices[n.id];
+  const ch = n.변경조문.map(c => { const d = diffHtml(c.구, c.신); return `<li><b>${esc(c.조문)}</b> — ${esc(c.제목)}<div class="diff small" style="margin-top:2px">개정 전: ${d.oldH}<br>개정 후: ${d.newH}</div></li>`; }).join('');
+  const props = (n.규칙제안 || []).map((p, i) => `<li>${esc(p.항목)}: ${esc(p.현행)} → <b>${esc(p.제안)}</b> (시행 ${esc(p.시행일)}) — ${esc(S.prop[`${n.id}:${i}`] || '전문가 확인 대기')}</li>`).join('');
+  let imp = '';
+  if (st) {
+    const t = st.tasks.filter(act);
+    imp = `<li>영향 항목 ${st.tasks.length}건 (조치 대상 ${t.length}건, 완료 ${t.filter(x => x.상태 === '완료').length}건) — ` +
+      [...SITES.map(x => x.id), 'HQ'].map(id => { const k = st.tasks.filter(x => x.사업장 === id).length; return `${siteShort(id)} ${k ? k + '건' : '영향 없음'}`; }).join(' · ') + '</li>';
+    const docs = st.tasks.filter(x => x.수정안 && x.수정안.length).length;
+    if (docs) imp += `<li>수정이 필요한 사내 문서 ${docs}건 (수정 위치 ${st.tasks.reduce((a, x) => a + (x.수정안?.length || 0), 0)}곳)</li>`;
+    const due = t.filter(x => x.상태 !== '완료').map(x => x.기한).sort()[0];
+    if (due) imp += `<li>가장 빠른 조치 기한 ${due} (${dday(due)})</li>`;
+  }
+  return `<div class="nsum printonly"><h4>고시 요약</h4>
+    <table style="font-size:12.5px;margin-bottom:6px"><tr><td style="width:90px"><b>고시명</b></td><td>${esc(n.제목)}</td></tr><tr><td><b>발령</b></td><td>${esc(n.발령기관)} · ${esc(n.공포번호)} · 공포 ${n.공포일} · <b>시행 ${n.시행일}</b></td></tr><tr><td><b>요지</b></td><td>${esc(n.요약)}</td></tr></table>
+    <b>주요 변경 내용</b><ul>${ch}</ul>
+    ${props ? `<b style="display:block;margin-top:6px">판정 기준(지식) 반영</b><ul>${props}</ul>` : ''}
+    ${imp ? `<b style="display:block;margin-top:6px">우리 사업장 영향 요약</b><ul>${imp}</ul>` : ''}
+    <p class="muted small" style="margin:6px 0 0">출력 ${nowStr()} · 기준일 ${base()} · ${curSite === 'ALL' ? '전체 사업장' : siteName(curSite)}</p></div>`;
+}
 function renderAna() {
   $('selN3').innerHTML = noticeOpts();
   const n = N();
-  $('nHead3').innerHTML = noticeHead(n);
+  $('nHead3').innerHTML = noticeHead(n) + noticeSummary(n);
   const s = S.notices[n.id];
   if (!s) {
     $('anaBox').innerHTML = `<div class="card" style="text-align:center;padding:36px"><h2>아직 분석하지 않은 고시입니다</h2><p class="desc">AI가 바뀐 조문을 읽고 우리 사업장의 물질·시설·변경관리·사내 문서·판정 규칙과 대조해 조치 목록을 만듭니다.</p><button class="btn orange big" id="anaBtn">우리 사업장 영향도 분석</button></div>`;
@@ -386,7 +409,8 @@ function renderAna() {
     <div class="prog"><span class="d" style="width:${ta.length ? done / ta.length * 100 : 0}%"></span><span class="p" style="width:${ta.length ? prog / ta.length * 100 : 0}%"></span></div>
     <div class="legend"><span><i style="background:var(--green)"></i>완료 ${done}</span><span><i style="background:var(--orange)"></i>진행 중 ${prog}</span><span><i style="background:#E3E9F2"></i>대기 ${ta.length - done - prog}</span><span>(비대상 ${jn}건 제외)</span>${over ? `<span style="color:var(--red);font-weight:700">기한 경과 ${over}</span>` : ''}</div>
     <div class="scroll" style="margin-top:12px"><table class="tasks" id="taskTable">
-      <tr><th>사업장</th><th>구분</th><th style="min-width:280px">영향 대상 · 내용</th><th>조치</th><th style="min-width:150px">담당자 판단</th><th>담당자</th><th>기한</th><th>상태</th><th class="noprint"></th></tr>
+      <colgroup><col style="width:52px"><col style="width:80px"><col style="min-width:240px"><col style="width:230px"><col style="width:112px"><col style="width:96px"><col style="width:116px"><col style="width:84px"><col class="noprint" style="width:46px"></colgroup>
+      <tr><th>사업장</th><th>구분</th><th>영향 대상 · 내용</th><th>조치</th><th>담당자 판단</th><th>담당자</th><th>기한</th><th>상태</th><th class="noprint"></th></tr>
       ${all.map((x, i) => inSite(x) ? taskRow(x, i) : '').join('')}
     </table></div>
   </div>
@@ -445,9 +469,9 @@ function taskRow(x, i) {
     <td>${sitePill(x.사업장)}</td>
     <td><span class="pill line">${esc(x.구분)}</span><br>${src}</td>
     <td><b>${esc(x.대상)}</b><div class="muted">${esc(x.영향)}</div>${recs}</td>
-    <td class="small">${esc(x.조치)}${link}</td>
+    <td class="act">${esc(x.조치)}${link ? `<div>${link}</div>` : ''}</td>
     <td>${judge}</td>
-    <td><select data-f="담당자">${personOpts(x.담당자, x.사업장 === 'HQ' ? null : x.사업장)}</select></td>
+    <td><select data-f="담당자" title="${esc((PEOPLE.find(p => p.이름 === x.담당자) || {}).부서 || '')}">${personOptsShort(x.담당자, x.사업장 === 'HQ' ? null : x.사업장)}</select><div class="small muted">${esc((PEOPLE.find(p => p.이름 === x.담당자) || {}).부서 || '')}</div></td>
     <td><input type="date" data-f="기한" value="${x.기한}"><div class="small ${over ? '' : 'muted'}" style="${over ? 'color:var(--red);font-weight:700' : ''}">${dday(x.기한)}</div></td>
     <td>${na ? '<span class="pill gray">해당 없음</span>' : `<select data-f="상태" ${wait ? 'disabled title="먼저 조치 대상 여부를 확인하세요"' : ''}>${ST.map(s => `<option ${s === x.상태 ? 'selected' : ''}>${s}</option>`).join('')}</select>${wait ? '<div class="small muted">판단 후 진행</div>' : ''}`}</td>
     <td class="noprint">${x.출처 !== 'AI' ? `<button class="btn ghost sm" data-del="${i}">삭제</button>` : ''}</td></tr>`;
