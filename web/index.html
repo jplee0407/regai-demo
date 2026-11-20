@@ -118,6 +118,14 @@
   tr.na td { background: #F3F4F6 !important; color: #8A93A3; }
   tr.na td b { color: #8A93A3; }
   .tasks select, .tasks input[type=date] { padding: 3px 5px; font-size: 12.5px; }
+  .kxh { font-size: 11.5px; font-weight: 800; color: var(--sub); margin: 10px 4px 4px; }
+  .kxi { display: flex; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 12.5px; line-height: 1.35; }
+  .kxi:hover { background: var(--bg); } .kxi.on { background: #E3ECF8; outline: 1px solid var(--lblue); }
+  .kxi i { flex: 0 0 4px; border-radius: 2px; }
+  .kxrule { display: flex; gap: 10px; align-items: flex-start; background: var(--bg); border-radius: 8px; padding: 10px; margin: 8px 0; }
+  .kxif { background: var(--navy); color: #fff; font-weight: 800; font-size: 11px; padding: 3px 8px; border-radius: 5px; flex: 0 0 auto; }
+  .kxif.then { background: var(--orange); }
+  #kxGraph .gnode:hover rect:first-child { filter: drop-shadow(0 2px 4px rgba(27,47,91,.25)); }
   @media print { header .who, .bar, .note, .noprint, .toast { display: none !important; } body { background: #fff; } .card { box-shadow: none; } }
 </style>
 </head>
@@ -196,20 +204,8 @@
     </div>
     <div class="card"><h2>신·구 조문 대비</h2><p class="desc">바뀐 부분은 <span class="diff"><del>삭제</del> <ins>추가</ins></span>로 표시합니다.</p><div id="cmpOut"></div></div>
     <div class="card"><h2>AI 규칙 반영 제안 → 전문가 확인·승인</h2><p class="desc">AI가 바뀐 조문에서 판정 값의 변화를 뽑아 제안합니다. 전문가가 값을 확인·수정하고 승인하면 새 규칙 버전이 시행일부터 적용되고, 이전 버전은 이력으로 남습니다.</p><div id="propOut"></div></div>
-    <div class="card">
-      <h2>지식 직접 편집·추가</h2>
-      <p class="desc">개정 외에도 전문가가 규칙 값을 바로 고치거나 새 점검 규칙을 추가할 수 있습니다. 코드는 바꾸지 않고 지식만 바뀝니다.</p>
-      <div class="grid2" style="grid-template-columns:1fr 1fr">
-        <div><h3>기존 규칙 수정</h3><div class="row"><select id="edRule"></select></div><div id="edForm"></div></div>
-        <div><h3>새 점검 규칙 추가 (체크리스트형)</h3>
-          <div class="field"><span>규칙 이름</span><input type="text" id="nrName" style="width:100%" placeholder="예: 저장탱크 방류벽 점검 항목"></div>
-          <div class="field"><span>근거 조문</span><select id="nrCite"></select></div>
-          <div class="field"><span>점검 항목 (한 줄에 하나)</span><textarea id="nrItems" placeholder="방류벽 용량 110% 이상&#10;배수 밸브 평상시 잠금&#10;방류벽 내부 균열 없음"></textarea></div>
-          <div class="row"><label class="row small">시행일 <input type="date" id="nrDate"></label><button class="btn blue" id="nrBtn">규칙 추가</button></div>
-        </div>
-      </div>
-      <div id="yamlBox" class="hidden"><h3>저장소에 들어갈 형태 (YAML)</h3><pre id="yamlOut"></pre><p class="muted">운영 시 이 변경은 Pull Request로 올라가 정답셋 회귀 테스트를 거친 뒤 병합됩니다. (⑦ GitHub 반영 흐름)</p></div>
-    </div>
+    <div class="card" id="kx"></div>
+    <div class="card hidden" id="yamlBox"><h2>저장소에 들어갈 형태 (YAML)</h2><pre id="yamlOut"></pre><p class="muted">운영 시 이 변경은 Pull Request로 올라가 정답셋 회귀 테스트를 거친 뒤 병합됩니다. (⑦ GitHub 반영 흐름)</p></div>
   </section>
 
   <!-- ⑤ 대시보드 -->

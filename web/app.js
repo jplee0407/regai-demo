@@ -37,14 +37,17 @@ const pickPerson = (부서, site) => { const ps = site.담당자; return (ps.fin
 const shash = s => { let h = 2166136261; for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; } return h.toString(16).padStart(8, '0') + '····'; };
 
 // ---------------------------------------------------------------- 지식 = 저장소 지식 + 전문가 승인 내역
-function knowledge() {
-  const K = { ...B, 규칙: clone(B.규칙), 조문: clone(B.조문), 수량: {} };
+function docLinks(d) { return (S && S.docLinks && S.docLinks[d.유형]) || d.관련조문; }
+function knowledge(apps = S.approvals) {
+  const K = { ...B, 규칙: clone(B.규칙), 조문: clone(B.조문), 가이드: clone(B.가이드), 해석: clone(B.해석 || []), 수량: {} };
   const approvedNotices = new Set();
-  for (const a of S.approvals) {
+  for (const a of apps) {
     if (a.notice) approvedNotices.add(a.notice);
     if (a.종류 === '확인') continue;
     if (a.종류 === '수량기준') { (K.수량[a.CAS] ||= []).push({ 시행일: a.시행일, 하위: Number(a.값), 승인: a.승인자 }); continue; }
     if (a.종류 === '새규칙') { K.규칙.push(clone(a.값)); continue; }
+    if (a.종류 === '해석편집') { const i = K.해석.findIndex(g => g.id === a.값.id); if (i >= 0) K.해석[i] = clone(a.값); else K.해석.push(clone(a.값)); continue; }
+    if (a.종류 === '가이드편집') { const i = K.가이드.findIndex(g => g.코드 === a.값.코드); if (i >= 0) K.가이드[i] = clone(a.값); else K.가이드.push(clone(a.값)); continue; }
     const r = K.규칙.find(x => x.id === a.규칙);
     if (!r) continue;
     const prev = r.버전.find(v => !v.폐지일) || r.버전[r.버전.length - 1];
@@ -57,6 +60,7 @@ function knowledge() {
     if (a.종류 === '필수항목추가' && !nv.필수항목.includes(a.값)) nv.필수항목.push(a.값);
     if (a.종류 === '필수항목편집') nv.필수항목 = a.값;
     if (a.종류 === '결정표편집') { nv.결정표 = a.값.결정표; nv.연장.최대_년 = a.값.연장_최대; }
+    if (a.종류 === '버전교체') { const keep = { 버전: nv.버전, 시행일: nv.시행일, 폐지일: null, 승인: nv.승인 }; Object.assign(nv, clone(a.값.버전), keep); if (a.값.이름) r.이름 = a.값.이름; if (a.값.설명) r.설명 = a.값.설명; }
     if (prev.시행일 < a.시행일) prev.폐지일 = a.시행일;
     r.버전.push(nv);
   }
@@ -137,7 +141,7 @@ function analyze(n) {
       규정수량_구: aff.map(({ m, q }) => `${m.이름} … 하위 규정수량 ${q.하위_구} 톤`).join(' / '),
       규정수량_신: aff.map(({ m, q }) => `${m.이름} … 하위 규정수량 ${q.하위_신} 톤`).join(' / ') };
     for (const d of site.문서) {
-      const hit = d.관련조문.some(x => ids.some(id => id === x || id.startsWith(x + '-')));
+      const hit = docLinks(d).some(x => ids.some(id => id === x || id.startsWith(x + '-')));
       if (!hit) continue;
       const recs = (n.문서수정 || []).filter(x => x.문서 === d.유형).map(x => ({ ...x, 현행: fill(x.현행, dv), 수정안: fill(x.수정안, dv), 채택: null })).map(x => ({ ...x, 최종: x.수정안 }));
       push({ 구분: '문서', 대상: `${d.이름} (${d.번호})`, 문서: d.id, 담당자: d.담당자, 기한: addDays(n.시행일, -30), 신뢰도: recs.length ? 0.9 : 0.62,
@@ -283,7 +287,7 @@ function renderSite() {
       return `<tr>${sc(site.id)}<td><b>${m.id}</b><br>${esc(m.이름)}<div class="muted">${esc(m.담당자)}</div></td><td class="small">${esc(m.변경유형)}</td><td>${m.변경완료_예정일}</td>
       <td>${d ? `<b>${d}</b> <span class="small" style="${d < base() ? 'color:var(--red);font-weight:700' : 'color:var(--sub)'}">${dday(d)}</span>${chg ? `<br><span class="pill red">기존 계획 ${m.계획서_제출예정}</span>` : ''}` : '-'}</td><td>${m.상태 === '진행' ? '<span class="pill orange">진행</span>' : '<span class="pill gray">완료</span>'}</td></tr>`; })).join('');
   $('docTable').innerHTML = `<tr>${sh}<th>문서</th><th>개정</th><th>담당</th><th>연결 조문</th></tr>` +
-    ss.flatMap(site => site.문서.map(d => `<tr>${sc(site.id)}<td><b>${esc(d.이름)}</b><div class="muted">${d.번호}</div></td><td class="small">${esc(d.개정)}</td><td style="white-space:nowrap">${esc(d.담당자)}</td><td class="small">${d.관련조문.map(x => x === 'QTY' ? '수량기준 고시' : x).join(', ')}</td></tr>`)).join('');
+    ss.flatMap(site => site.문서.map(d => `<tr>${sc(site.id)}<td><b>${esc(d.이름)}</b><div class="muted">${d.번호}</div></td><td class="small">${esc(d.개정)}</td><td style="white-space:nowrap">${esc(d.담당자)}</td><td class="small">${docLinks(d).map(x => x === 'QTY' ? '수량기준 고시' : x).join(', ')}</td></tr>`)).join('');
 }
 $('siteKpi').onclick = e => { const c = e.target.closest('[data-site]'); if (!c) return; setSite(curSite === c.dataset.site ? 'ALL' : c.dataset.site); };
 function setSite(id) { curSite = id; $('siteSel').value = id; render(); }
@@ -495,18 +499,19 @@ function renderCmp() {
     const field = p.종류 === '확인' ? `<span>${esc(p.제안)}</span>` :
       `<input type="${p.종류 === '필수항목추가' ? 'text' : 'number'}" id="pv-${i}" value="${esc(p.제안)}" ${st ? 'disabled' : ''} style="width:${p.종류 === '필수항목추가' ? 220 : 100}px">`;
     return `<div class="result ${st === '승인' ? '' : st === '반려' ? '' : 'hit'}">
-      <div class="row between"><h3>${rule ? `${esc(rule.id)} ${esc(rule.이름)}` : '물질별 규정수량 표'} <span class="ai">AI 추출</span></h3>${st ? `<span class="pill ${st === '승인' ? 'green' : 'red'}">${st}</span>` : '<span class="pill orange">전문가 확인 대기</span>'}</div>
+      <div class="row between"><h3>${rule ? `${esc(rule.id)} ${esc(rule.이름)}` : '물질별 규정수량 표'} <span class="ai">AI 추출</span> <a href="#" class="small" data-kx="${p.규칙 === '수량기준' ? 'QTY' : p.규칙}">현재 지식 보기 ↓</a></h3>${st ? `<span class="pill ${st === '승인' ? 'green' : 'red'}">${st}</span>` : '<span class="pill orange">전문가 확인 대기</span>'}</div>
       <p class="muted" style="margin:0 0 8px">${esc(p.설명)}</p>
       <div class="kv"><b>변경 항목</b><span>${esc(p.항목)}</span><b>현행 값</b><span>${esc(p.현행)}</span><b>${p.종류 === '필수항목추가' ? '추가 항목' : '제안 값'}</b><span>${field}</span>
         <b>적용 시행일</b><span><input type="date" id="pd-${i}" value="${p.시행일}" ${st ? 'disabled' : ''}></span><b>근거 조문</b><span><code>${esc(p.근거)}</code></span>
         <b>승인자</b><span><select id="pa-${i}" ${st ? 'disabled' : ''}>${personOpts('김지훈')}</select></span><b>검토 의견</b><span><input type="text" id="pc-${i}" style="width:100%" placeholder="예: 개정 조문과 일치 확인" ${st ? 'disabled' : ''}></span></div>
       ${st ? '' : `<div class="row"><button class="btn green" data-ok="${i}">승인 · 지식에 반영</button><button class="btn ghost" data-no="${i}">반려</button></div>`}</div>`;
   }).join('') || '<p class="muted">규칙 변경 제안이 없습니다.</p>';
-  renderEditor();
+  renderKX();
 }
 $('selN4').onchange = e => { cur = e.target.value; renderCmp(); };
 $('propOut').onclick = e => {
   const n = N(), ok = e.target.dataset.ok, no = e.target.dataset.no;
+  const kx = e.target.closest('[data-kx]'); if (kx) { e.preventDefault(); ED.sel = kx.dataset.kx; ED.mode = 'view'; ED.draft = null; renderKX(); $('kx').scrollIntoView({ behavior: 'smooth' }); return; }
   if (ok === undefined && no === undefined) return;
   const i = +(ok ?? no), p = n.규칙제안[i];
   const ns = S.notices[n.id];
@@ -518,48 +523,414 @@ $('propOut').onclick = e => {
   const allDone = n.규칙제안.every((q, k) => q.규칙 !== p.규칙 || S.prop[`${n.id}:${k}`]);
   if (allDone && ns) ns.tasks.filter(t => t.규칙키 === p.규칙).forEach(t => { t.상태 = '완료'; t.판단 = '조치 대상'; t.판단자 = a.승인자; });
   log(`${n.id} 규칙 반영 승인: ${p.항목} ${p.현행} → ${a.값 ?? '변경 없음'} (시행 ${a.시행일})`, a.승인자);
-  save(); K = knowledge(); renderCmp(); showYaml(a);
+  save(); K = knowledge(); ED.sel = p.규칙 === '수량기준' ? 'QTY' : p.규칙; ED.mode = 'view'; ED.draft = null; renderCmp(); showYaml(a);
   toast(`승인 완료 — ${a.시행일}부터 새 규칙 버전으로 판정합니다`);
 };
 
-// ---- 지식 직접 편집
-function renderEditor() {
-  const opts = K.규칙.map(r => `<option value="${r.id}">${r.id} ${esc(r.이름)} (${r.유형})</option>`).join('') + '<option value="QTY">물질별 규정수량 표</option>';
-  const prev = $('edRule').value;
-  $('edRule').innerHTML = opts; if (prev) $('edRule').value = prev;
-  const id = $('edRule').value, r = K.규칙.find(x => x.id === id);
-  const v = r ? (r.버전.find(x => !x.폐지일) || r.버전[r.버전.length - 1]) : null;
-  let body = '';
-  if (id === 'QTY') body = `<div class="field"><span>물질</span><select id="edCas">${ALLCHEM.map(m => `<option value="${m.CAS}">${esc(m.이름)} (현재 ${qtyAt(m, base()).하위} t)</option>`).join('')}</select></div><div class="field"><span>하위 규정수량 (t)</span><input type="number" id="edVal" value="10"></div>`;
-  else if (r.유형 === '조건판정') body = `<div class="field"><span>제출 기한 (변경완료 예정일 기준 일수) · 최신 v${v.버전}: ${v.결과.기한.일수}</span><input type="number" id="edVal" value="${v.결과.기한.일수}"></div>`;
-  else if (r.유형 === '체크리스트') body = `<div class="field"><span>필수 항목 (한 줄에 하나) · 최신 v${v.버전}</span><textarea id="edVal" style="min-height:150px">${esc(v.필수항목.join('\n'))}</textarea></div>`;
-  else if (r.유형 === '결정표') body = `<div class="field"><span>결정표 (검사 주기 · 년) · 최신 v${v.버전}</span><table>${v.결정표.map((t, k) => `<tr><td>${t.사업장군} ${t.위험도 || ''}</td><td><input type="number" data-k="${k}" class="edRow" value="${t.주기_년}" style="width:70px"> 년</td></tr>`).join('')}<tr><td>연장 최대</td><td><input type="number" id="edExt" value="${v.연장.최대_년}" style="width:70px"> 년</td></tr></table></div>`;
-  const cites = Object.keys(K.조문).map(x => `<option>${x}</option>`).join('');
-  $('edForm').innerHTML = body + `<div class="row" style="align-items:flex-end"><label class="field"><span>시행일</span><input type="date" id="edDate" value="${base()}"></label>
-    <label class="field"><span>근거 조문</span><select id="edCite"><option value="">(유지)</option>${cites}</select></label><label class="field"><span>승인자</span><select id="edBy">${personOpts('김지훈')}</select></label>
-    <div class="field"><button class="btn blue" id="edBtn">새 버전으로 반영</button></div></div>`;
-  $('edBtn').onclick = () => {
-    const a = { notice: null, 규칙: id, 시행일: $('edDate').value, 근거: $('edCite').value || null, 승인자: $('edBy').value, 일시: nowStr(), 의견: '직접 편집' };
-    if (id === 'QTY') Object.assign(a, { 종류: '수량기준', CAS: $('edCas').value, 값: Number($('edVal').value) });
-    else if (r.유형 === '조건판정') Object.assign(a, { 종류: '기한일수', 값: Number($('edVal').value) });
-    else if (r.유형 === '체크리스트') Object.assign(a, { 종류: '필수항목편집', 값: $('edVal').value.split('\n').map(s => s.trim()).filter(Boolean) });
-    else Object.assign(a, { 종류: '결정표편집', 값: { 결정표: v.결정표.map((t, k) => ({ ...t, 주기_년: Number(document.querySelector(`.edRow[data-k="${k}"]`).value) })), 연장_최대: Number($('edExt').value) } });
-    if (a.종류 !== '수량기준' && a.시행일 <= v.시행일) return toast(`시행일은 현재 버전 시행일(${v.시행일}) 이후여야 합니다`);
-    S.approvals.push(a); log(`지식 직접 편집: ${id} 새 버전 (시행 ${a.시행일})`, a.승인자); save(); K = knowledge(); renderEditor(); showYaml(a); toast('새 규칙 버전을 만들었습니다');
+// ================================================================ 지식 탐색기 (그래프 + 목록 + 편집)
+const ED = { sel: 'R-23-3', mode: 'view', draft: null, q: '', hover: null };
+const DOC_TYPES = SITES[0].문서.map(d => ({ 유형: d.유형, 이름: d.이름 }));
+const refsOf = r => [...new Set(r.버전.flatMap(v => [...v.근거, ...[...JSON.stringify(v).matchAll(/"근거":"([^"]+)"/g)].map(m => m[1])]))];
+const latest = r => r.버전.find(v => !v.폐지일) || r.버전[r.버전.length - 1];
+const artLabel = id => { const a = (K.조문[id] || [])[0]; return a ? label(a) : id; };
+const daysTxt = n => n < 0 ? `${-n}일 전` : n > 0 ? `${n}일 후` : '당일';
+const FIELD_NAME = Object.fromEntries([['취급량_증가', '취급량 증가'], ['취급시설_용량_증가', '취급시설 용량 증가'], ['신규_취급시설', '새로운 취급시설 설치'], ['물질_변경_추가', '유해화학물질 변경·추가'], ['함량_농도_성상_변경', '함량·농도·성상 변경'], ['위험도_증가', '위험 증가'], ['시설_위치_변경', '사업장 내 시설 위치 변경']]);
+const TYPE_COLOR = { 고시: '#C9822B', 조문: '#2D5FA8', 규칙: '#1B2F5B', 기준표: '#1B2F5B', 가이드: '#3A9B6A', 해석: '#B5487A', 문서: '#6B5BA8' };
+const INT_KIND = ['유권해석', '질의회신', '컨설턴트 판단', '판례·심판', '내부 기준'];
+const intOf = ruleId => K.해석.filter(x => x.적용규칙.includes(ruleId) && x.상태 !== '폐기');
+const intCards = list => list.map(x => `<div class="cite" style="border-left:3px solid ${TYPE_COLOR.해석}"><span class="pill" style="background:${TYPE_COLOR.해석}">${esc(x.구분)}</span><span class="pill ${x.신뢰수준 === '공식' ? 'navy' : 'gray'}">${esc(x.신뢰수준)}</span>${x.상태 !== '유효' ? `<span class="pill orange">${esc(x.상태)}</span>` : ''} <b>${esc(x.제목)}</b><br>${esc(x.판단)}<div class="muted small">${esc(x.출처)} · 확인 ${esc(x.확인자)}${x.적용방법 ? ` · 적용: ${esc(x.적용방법)}` : ''}</div></div>`).join('');
+
+// ---- 지식 그래프 구성
+function kgraph() {
+  const nodes = [], edges = [];
+  const add = (id, type, label, sub, col) => nodes.push({ id, type, label, sub, col });
+  const artKey = id => id.startsWith('QTY') ? 'QTY' : 'A:' + id;
+  NOTICES.forEach(n => add('N:' + n.id, '고시', (n.제목.split('—')[1] || n.제목).trim(), `시행 ${n.시행일}`, 0));
+  DOC_TYPES.forEach(d => add('D:' + d.유형, '문서', d.이름, `사업장 ${SITES.length}곳`, 0));
+  Object.keys(K.조문).forEach(id => add('A:' + id, '조문', artLabel(id), K.조문[id][0].제목, 1));
+  K.규칙.forEach(r => add(r.id, '규칙', `${r.id} ${r.이름}`, `${r.유형} · v${latest(r).버전}`, 2));
+  add('QTY', '기준표', '물질별 규정수량 표', `물질 ${ALLCHEM.length}종`, 2);
+  K.가이드.forEach(g => add('G:' + g.코드, '가이드', `${g.코드} ${g.지적유형}`, `규칙 ${g.규칙}`, 3));
+  K.해석.forEach(x => add('I:' + x.id, '해석', x.제목.replace(/["']/g, ''), `${x.구분} · ${x.상태}`, 3));
+  const has = id => nodes.some(n => n.id === id);
+  const E = (a, b, t) => { if (has(a) && has(b) && !edges.some(e => e.a === a && e.b === b)) edges.push({ a, b, t }); };
+  NOTICES.forEach(n => n.변경조문.forEach(c => E('N:' + n.id, artKey(c.id), '개정')));
+  DOC_TYPES.forEach(d => docLinks(SITES[0].문서.find(x => x.유형 === d.유형)).forEach(id => E('D:' + d.유형, id === 'QTY' ? 'QTY' : 'A:' + id, '인용')));
+  K.규칙.forEach(r => refsOf(r).forEach(id => E('A:' + id, r.id, '근거')));
+  K.가이드.forEach(g => { E(g.규칙, 'G:' + g.코드, '연결'); g.근거.forEach(id => E('A:' + id, 'G:' + g.코드, '근거')); });
+  Object.entries(K.조문).forEach(([id, vs]) => (vs[0].위임 || []).forEach(x => E('A:' + id, 'A:' + x, '위임')));
+  K.해석.forEach(x => { x.관련조문.forEach(id => E('A:' + id, 'I:' + x.id, '해석')); x.적용규칙.forEach(r => E(r, 'I:' + x.id, '적용')); });
+  return { nodes, edges };
+}
+function graphSvg() {
+  const { nodes, edges } = kgraph();
+  const W = 1180, NW = 236, NH = 34, GAP = 8, TOP = 44;
+  const colX = [10, 330, 640, 940];
+  const colHead = ['고시(개정) · 사업장 문서', '법령 조문', '판정 규칙 · 기준표', '가이드 · 해석·판단'];
+  const pos = {}; const cnt = [0, 0, 0, 0];
+  nodes.forEach(n => {
+    if (n.col === 0 && n.type === '문서' && !cnt.sep) { cnt[0] += 22; cnt.sep = 1; }
+    if (n.col === 3 && n.type === '해석' && !cnt.sep3) { cnt[3] += 22; cnt.sep3 = 1; }
+    pos[n.id] = { x: colX[n.col], y: TOP + cnt[n.col] }; cnt[n.col] += NH + GAP;
+  });
+  // 가이드·규칙 칼럼은 가운데 정렬
+  const H = Math.max(...cnt.slice(0, 4)) + TOP + 10;
+  [2, 3].forEach(c => { const off = (H - TOP - cnt[c]) / 2.5; nodes.filter(n => n.col === c).forEach(n => pos[n.id].y += off); });
+  const focus = ED.hover || ED.sel && (pos[ED.sel] ? ED.sel : null);
+  const nb = new Set(focus ? [focus, ...edges.filter(e => e.a === focus || e.b === focus).flatMap(e => [e.a, e.b])] : []);
+  const ECOL = { 개정: '#C9822B', 인용: '#6B5BA8', 근거: '#2D5FA8', 연결: '#3A9B6A', 위임: '#9AA5B4', 해석: '#B5487A', 적용: '#B5487A' };
+  const path = e => {
+    const A = pos[e.a], Bp = pos[e.b];
+    if (e.t === '위임') { const x = A.x + NW, y1 = A.y + NH / 2, y2 = Bp.y + NH / 2; return `M${x} ${y1} C${x + 40} ${y1}, ${x + 40} ${y2}, ${x} ${y2}`; }
+    const x1 = A.x + NW, y1 = A.y + NH / 2, x2 = Bp.x, y2 = Bp.y + NH / 2, mx = (x1 + x2) / 2;
+    return `M${x1} ${y1} C${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
+  };
+  const eh = edges.map(e => { const on = !focus || (nb.has(e.a) && nb.has(e.b) && (e.a === focus || e.b === focus));
+    return `<path d="${path(e)}" fill="none" stroke="${ECOL[e.t]}" stroke-width="${on && focus ? 2.4 : 1.2}" opacity="${on ? (focus ? .95 : .45) : .07}" ${e.t === '위임' ? 'stroke-dasharray="4 3"' : ''}/>`; }).join('');
+  const nh = nodes.map(n => { const p = pos[n.id], on = !focus || nb.has(n.id), sel = n.id === ED.sel, c = TYPE_COLOR[n.type];
+    const lab = n.label.length > 19 ? n.label.slice(0, 18) + '…' : n.label;
+    return `<g class="gnode" data-node="${esc(n.id)}" style="cursor:pointer" opacity="${on ? 1 : .25}">
+      <rect x="${p.x}" y="${p.y}" width="${NW}" height="${NH}" rx="7" fill="${sel ? c : '#fff'}" stroke="${c}" stroke-width="${sel ? 2.5 : 1.3}"/>
+      <rect x="${p.x}" y="${p.y}" width="5" height="${NH}" rx="2" fill="${c}"/>
+      <text x="${p.x + 12}" y="${p.y + 14}" font-size="11.5" font-weight="700" fill="${sel ? '#fff' : '#1F2A3C'}">${esc(lab)}</text>
+      <text x="${p.x + 12}" y="${p.y + 27}" font-size="9.5" fill="${sel ? '#E5ECF7' : '#5B6577'}">${esc(n.sub.length > 30 ? n.sub.slice(0, 29) + '…' : n.sub)}</text>
+      <title>${esc(n.label)} — ${esc(n.sub)}</title></g>`; }).join('');
+  const heads = colHead.map((h, i) => `<text x="${colX[i]}" y="20" font-size="12" font-weight="800" fill="#1B2F5B">${h}</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:900px;display:block" xmlns="http://www.w3.org/2000/svg">${heads}${eh}${nh}</svg>`;
+}
+
+// ---- 화면
+function renderKX() {
+  const box = $('kx'); if (!box) return;
+  const legend = Object.entries({ 고시: '고시·개정', 조문: '법령 조문', 규칙: '판정 규칙·기준표', 가이드: '지적·조치 가이드', 해석: '해석·판단 (유권해석·컨설턴트)', 문서: '사업장 문서' })
+    .map(([k, v]) => `<span><i style="background:${TYPE_COLOR[k]}"></i>${v}</span>`).join('') +
+    '<span style="margin-left:10px">선: <b style="color:#C9822B">개정</b> · <b style="color:#2D5FA8">근거</b> · <b style="color:#3A9B6A">연결</b> · <b style="color:#6B5BA8">인용</b> · <b style="color:#B5487A">해석·적용</b> · <b style="color:#9AA5B4">위임(점선)</b></span>';
+  box.innerHTML = `
+    <div class="row between"><div><h2 id="kxTitle">지식 연결도 · 지식 편집</h2><p class="desc" style="margin:0">노드를 누르면 연결된 지식이 강조되고, 아래에서 내용과 연결 관계를 바로 수정할 수 있습니다. 판정 규칙은 수정하면 새 버전으로 저장되고 이전 버전은 이력으로 남습니다.</p></div>
+      <div class="row"><input type="text" id="kxQ" placeholder="지식 검색 (예: 표시, 30일, 암모니아)" value="${esc(ED.q)}" style="width:240px"><button class="btn sm" style="background:${TYPE_COLOR.해석}" data-act="new-int">+ 해석·판단</button><button class="btn blue sm" data-act="new">+ 새 점검 규칙</button></div></div>
+    <div class="legend" style="margin:10px 0 4px;flex-wrap:wrap">${legend}</div>
+    <div class="scroll" id="kxGraph" style="border:1px solid var(--line);border-radius:10px;background:#FBFCFE;padding:6px">${graphSvg()}</div>
+    <div class="grid2" style="grid-template-columns:280px 1fr;margin-top:14px">
+      <div id="kxNav" style="max-height:640px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px">${navHtml()}</div>
+      <div id="kxDetail">${detailHtml()}</div>
+    </div>`;
+  bindKX();
+}
+function navHtml() {
+  const q = ED.q.trim();
+  const m = (...t) => !q || t.join(' ').includes(q);
+  const item = (id, title, sub, type) => `<div class="kxi ${ED.sel === id ? 'on' : ''}" data-node="${esc(id)}"><i style="background:${TYPE_COLOR[type]}"></i><div><b>${esc(title)}</b><div class="muted small">${esc(sub)}</div></div></div>`;
+  const grp = (h, xs) => xs.length ? `<div class="kxh">${h}</div>${xs.join('')}` : '';
+  return grp('판정 규칙 · 기준표', [...K.규칙.filter(r => m(r.id, r.이름, r.설명, JSON.stringify(latest(r)))).map(r => item(r.id, `${r.id} ${r.이름}`, `${r.유형} · v${latest(r).버전} · 시행 ${latest(r).시행일}`, '규칙')),
+      ...(m('규정수량', '수량기준', ...ALLCHEM.map(x => x.이름)) ? [item('QTY', '물질별 규정수량 표', `물질 ${ALLCHEM.length}종 · 수량기준 고시`, '기준표')] : [])])
+    + grp('지적·조치 가이드', K.가이드.filter(g => m(g.코드, g.지적유형, g.권고조치)).map(g => item('G:' + g.코드, `${g.코드} ${g.지적유형}`, `규칙 ${g.규칙}`, '가이드')))
+    + grp('해석·판단 (유권해석·컨설턴트)', K.해석.filter(x => m(x.id, x.제목, x.판단, x.질의, x.구분, x.출처)).map(x => item('I:' + x.id, x.제목, `${x.구분} · ${x.신뢰수준} · ${x.상태}`, '해석')))
+    + grp('법령 조문', Object.entries(K.조문).filter(([id, v]) => m(id, label(v[0]), v[0].제목, ...v.map(a => a.내용))).map(([id, v]) => item('A:' + id, label(v[0]), `${v[0].제목}${v.length > 1 ? ` · 버전 ${v.length}` : ''}`, '조문')))
+    + grp('사업장 문서 (유형)', DOC_TYPES.filter(d => m(d.이름, d.유형)).map(d => item('D:' + d.유형, d.이름, `사업장 ${SITES.length}곳 · 조문 ${docLinks(SITES[0].문서.find(x => x.유형 === d.유형)).length}개 연결`, '문서')))
+    + grp('고시 (개정)', NOTICES.filter(n => m(n.제목, n.요약)).map(n => item('N:' + n.id, (n.제목.split('—')[1] || n.제목).trim(), `${n.구분} · 시행 ${n.시행일}`, '고시')));
+}
+function neighbors(id) {
+  const { nodes, edges } = kgraph();
+  const nm = Object.fromEntries(nodes.map(n => [n.id, n]));
+  return edges.filter(e => e.a === id || e.b === id).map(e => ({ n: nm[e.a === id ? e.b : e.a], t: e.t, dir: e.a === id ? '→' : '←' }));
+}
+const nbChips = id => { const xs = neighbors(id); return xs.length ? `<div class="chips">${xs.map(x => `<span class="chip" data-node="${esc(x.n.id)}" style="cursor:pointer;border-color:${TYPE_COLOR[x.n.type]}"><span class="muted">${x.t}</span> <b>${esc(x.n.label)}</b></span>`).join('')}</div>` : '<p class="muted">연결된 지식이 없습니다.</p>'; };
+const citeChip = (id, del) => `<span class="chip" style="border-color:${TYPE_COLOR.조문}"><b data-node="A:${esc(id)}" style="cursor:pointer">${esc(artLabel(id))}</b> <code>${esc(id)}</code>${del ? ` <a href="#" data-act="${del}" data-v="${esc(id)}" style="color:var(--red);text-decoration:none">✕</a>` : ''}</span>`;
+const citeSelect = (sid, exclude = []) => `<select id="${sid}"><option value="">+ 조문 연결</option>${Object.keys(K.조문).filter(x => !exclude.includes(x)).map(x => `<option value="${x}">${esc(artLabel(x))} (${x})</option>`).join('')}</select>`;
+const card = (title, body) => `<div class="result" style="background:#fff">${title ? `<h3>${title}</h3>` : ''}${body}</div>`;
+
+function detailHtml() {
+  const id = ED.sel;
+  if (id === 'NEW') return newRuleHtml();
+  if (id.startsWith('I:')) return interpHtml(id.slice(2));
+  if (id === 'QTY') return qtyHtml();
+  if (id === 'I:NEW') return interpHtml('NEW');
+  if (id.startsWith('G:')) return guideHtml(K.가이드.find(g => g.코드 === id.slice(2)));
+  if (id.startsWith('A:')) return artHtml(id.slice(2));
+  if (id.startsWith('D:')) return docHtml(id.slice(2));
+  if (id.startsWith('N:')) return noticeKHtml(NOTICES.find(n => n.id === id.slice(2)));
+  const r = K.규칙.find(x => x.id === id);
+  return r ? ruleHtml(r) : '<p class="muted">왼쪽이나 그래프에서 지식을 고르세요.</p>';
+}
+
+// ---- 규칙
+function ruleBody(r, v, edit) {
+  const bind = (path, val, w = 220, num = false) => edit ? `<input type="${num ? 'number' : 'text'}" data-bind="${path}" ${num ? 'data-num="1"' : ''} value="${esc(val)}" style="width:${w}px">` : `<b>${esc(val)}</b>`;
+  if (r.유형 === '조건판정') {
+    const conds = v.조건.any.map((c, i) => {
+      if (c.all) return `<li><b>모두 해당:</b> ${c.all.map((x, j) => `${edit ? bind(`버전.조건.any.${i}.all.${j}.설명`, x.설명, 150) : `<b>${esc(x.설명)}</b>`} ${citeChip(x.근거)}`).join(' <b>+</b> ')} ${edit ? `<a href="#" data-act="cond-del" data-v="${i}" style="color:var(--red)">삭제</a>` : ''}</li>`;
+      return `<li>${edit ? bind(`버전.조건.any.${i}.설명`, c.설명, 230) : `<b>${esc(c.설명)}</b>`} <span class="muted small">(${esc(c.필드)})</span> ${citeChip(c.근거)} ${edit ? `<a href="#" data-act="cond-del" data-v="${i}" style="color:var(--red)">삭제</a>` : ''}</li>`;
+    }).join('');
+    const used = v.조건.any.flatMap(c => c.all ? c.all.map(x => x.필드) : [c.필드]);
+    const addC = edit ? `<div class="row" style="margin-top:6px"><select id="kxNewField"><option value="">+ 조건 추가</option>${Object.entries(FIELD_NAME).filter(([k]) => !used.includes(k)).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>${citeSelect('kxNewFieldCite')}<button class="btn ghost sm" data-act="cond-add">추가</button></div>` : '';
+    const d = v.결과.기한;
+    return `<div class="kxrule"><div class="kxif">IF</div><div><b>다음 중 하나라도 해당하면</b><ol style="margin:6px 0;padding-left:20px;line-height:2">${conds}</ol>${addC}</div></div>
+      <div class="kxrule"><div class="kxif then">THEN</div><div class="kv" style="grid-template-columns:90px 1fr;margin:0">
+        <b>조치</b><span>${bind('버전.결과.조치', v.결과.조치, 300)}</span><b>제출처</b><span>${bind('버전.결과.제출처', v.결과.제출처, 200)}</span><b>서식</b><span>${bind('버전.결과.서식', v.결과.서식, 200)}</span>
+        <b>제출 기한</b><span>변경완료 예정일 ${edit ? `<button class="btn ghost sm" data-act="days" data-v="-10">−10</button> <input type="number" data-bind="버전.결과.기한.일수" data-num="1" value="${d.일수}" style="width:70px"> <button class="btn ghost sm" data-act="days" data-v="10">+10</button> 일 → <b id="kxDaysTxt">${daysTxt(d.일수)}</b>` : `<b style="color:var(--red);font-size:15px">${daysTxt(d.일수)}</b>`} ${citeChip(d.근거)}</span></div></div>`;
+  }
+  if (r.유형 === '결정표') {
+    const rows = v.결정표.map((t, i) => `<tr><td>${edit ? `<select data-bind="버전.결정표.${i}.사업장군">${['1군', '2군', '기타'].map(x => `<option ${x === t.사업장군 ? 'selected' : ''}>${x}</option>`).join('')}</select>` : t.사업장군}</td>
+      <td>${edit ? `<select data-bind="버전.결정표.${i}.위험도"><option value="">(전체)</option>${['가', '나', '다'].map(x => `<option ${x === t.위험도 ? 'selected' : ''}>${x}</option>`).join('')}</select>` : t.위험도 || '(전체)'}</td>
+      <td>${edit ? `<input type="number" data-bind="버전.결정표.${i}.주기_년" data-num="1" value="${t.주기_년}" style="width:60px">` : `<b>${t.주기_년}</b>`} 년</td>${edit ? `<td><a href="#" data-act="row-del" data-v="${i}" style="color:var(--red)">삭제</a></td>` : ''}</tr>`).join('');
+    const x = v.연장;
+    return `<b>사업장 군 · 시설 위험도 → 정기검사 주기</b><table style="margin:6px 0 4px;max-width:520px"><tr><th>사업장 군</th><th>위험도</th><th>주기</th>${edit ? '<th></th>' : ''}</tr>${rows}</table>${edit ? '<button class="btn ghost sm" data-act="row-add">+ 행 추가</button>' : ''}
+      <div class="kxrule" style="margin-top:10px"><div class="kxif">연장</div><div>최근 ${edit ? `<input type="number" data-bind="버전.연장.조건.연속적합_횟수_이상" data-num="1" value="${x.조건.연속적합_횟수_이상}" style="width:50px">` : `<b>${x.조건.연속적합_횟수_이상}</b>`}회 연속 적합 · 검사기관 ${edit ? `<input type="number" data-bind="버전.연장.조건.검사기관수_이상" data-num="1" value="${x.조건.검사기관수_이상}" style="width:50px">` : `<b>${x.조건.검사기관수_이상}</b>`}곳 이상 → 최대 ${edit ? `<input type="number" data-bind="버전.연장.최대_년" data-num="1" value="${x.최대_년}" style="width:50px">` : `<b>${x.최대_년}</b>`}년 연장 ${citeChip(x.근거)}</div></div>`;
+  }
+  if (r.유형 === '체크리스트') {
+    return `<b>필수 항목 ${v.필수항목.length}개</b> <span class="muted small">(라벨 생성 · 현장 사진 판독 · 표시 점검에서 함께 사용)</span>
+      <div class="chips">${v.필수항목.map((t, i) => `<span class="chip" style="font-size:13px">${i + 1}. <b>${esc(t)}</b>${edit ? ` <a href="#" data-act="item-del" data-v="${i}" style="color:var(--red);text-decoration:none">✕</a>` : ''}</span>`).join('')}</div>
+      ${edit ? '<div class="row"><input type="text" id="kxNewItem" placeholder="항목 추가 (예: 24시간 비상연락처)" style="width:260px"><button class="btn ghost sm" data-act="item-add">추가</button></div>' : ''}
+      ${v.결과 ? `<div class="kv" style="margin-top:8px"><b>미충족 시 조치</b><span>${bind('버전.결과.조치', v.결과.조치, 300)}</span>${v.결과.지적유형 ? `<b>지적 유형</b><span><span class="chip" data-node="G:${v.결과.지적유형}" style="cursor:pointer">${v.결과.지적유형}</span></span>` : ''}</div>` : ''}`;
+  }
+  return '';
+}
+function ruleHtml(r) {
+  const cur = activeVersion(r, base()), last = latest(r);
+  const edit = ED.mode === 'edit' && ED.draft?.id === r.id;
+  const v = edit ? ED.draft.버전 : (ED.verView && r.버전.find(x => x.버전 === ED.verView)) || last;
+  const tl = r.버전.map(x => { const st = x === cur ? 'green' : x.시행일 > base() ? 'orange' : 'gray';
+    return `<span class="chip" data-act="ver" data-v="${x.버전}" style="cursor:pointer;${x === v && !edit ? 'border-color:var(--blue);background:var(--bg)' : ''}"><span class="pill ${st}">v${x.버전}</span> ${x.시행일}${x.폐지일 ? ` ~ ${x.폐지일}` : ' ~'} <span class="muted small">${esc(x.승인)}</span></span>`; }).join('<span class="muted">→</span>');
+  const cites = edit ? ED.draft.버전.근거 : v.근거;
+  return `<div class="result" style="background:#fff;border-color:${edit ? 'var(--orange)' : 'var(--line)'}">
+    <div class="row between"><div>${edit ? `<input type="text" data-bind="이름" value="${esc(ED.draft.이름)}" style="font-size:15px;font-weight:700;width:360px">` : `<h3 style="margin:0">${esc(r.id)} ${esc(r.이름)} <span class="pill gray">${esc(r.유형)}</span></h3>`}</div>
+      <div class="row">${edit ? '<span class="pill orange">편집 중</span>' : `<button class="btn blue" data-act="edit">✎ 수정하기</button>`}</div></div>
+    ${edit ? `<input type="text" data-bind="설명" value="${esc(ED.draft.설명)}" style="width:100%;margin:6px 0">` : `<p class="muted" style="margin:6px 0">${esc(r.설명)}</p>`}
+    <div class="chips" style="align-items:center"><b class="small">버전</b> ${tl}</div>
+    ${!edit && v !== last ? `<p class="note" style="margin:6px 0">v${v.버전} (이력)을 보고 있습니다.</p>` : ''}
+    <div style="margin:10px 0">${ruleBody(r, v, edit)}</div>
+    <div><b class="small">근거 조문</b><div class="chips">${cites.map(c => citeChip(c, edit ? 'cite-del' : null)).join('')}${edit ? citeSelect('kxNewCite', cites) + '<button class="btn ghost sm" data-act="cite-add">연결</button>' : ''}</div></div>
+    <div style="margin-top:6px"><div class="row between"><b class="small">관련 해석·판단 (법령만으로 애매한 부분의 판단 근거)</b><button class="btn ghost sm" data-act="new-int" data-v="${r.id}">+ 해석·판단 연결</button></div>${intCards(intOf(r.id)) || '<p class="muted small">연결된 해석·판단이 없습니다.</p>'}</div>
+  </div>
+  ${edit ? `<div class="result hit" id="kxReview">${reviewHtml(r)}</div>` : ''}
+  ${card('연결된 지식', nbChips(r.id))}`;
+}
+function draftApproval(r) {
+  return { notice: null, 규칙: r.id, 종류: '버전교체', 값: { 이름: ED.draft.이름, 설명: ED.draft.설명, 버전: ED.draft.버전 }, 시행일: ED.draft.시행일, 근거: null, 승인자: ED.draft.승인자, 일시: nowStr(), 의견: ED.draft.의견 || '지식 직접 편집' };
+}
+function flat(o, p = '', out = {}) { if (o && typeof o === 'object') { for (const [k, v] of Object.entries(o)) flat(v, p ? `${p}.${k}` : k, out); } else out[p] = o; return out; }
+const PATH_NAME = p => p.replace(/^조건\.any\.(\d+)/, (_, i) => `조건 ${+i + 1}`).replace('결과.기한.일수', '제출 기한 (일)').replace(/^결정표\.(\d+)/, (_, i) => `결정표 ${+i + 1}행`).replace(/^필수항목\.(\d+)/, (_, i) => `필수 항목 ${+i + 1}`).replace(/^근거\.(\d+)/, (_, i) => `근거 조문 ${+i + 1}`).replace(/\./g, ' › ');
+function reviewHtml(r) {
+  const last = latest(r), d = ED.draft;
+  const strip = v => { const { 버전, 시행일, 폐지일, 승인, ...rest } = v; return rest; };
+  const A = flat(strip(last)), Bv = flat(strip(d.버전));
+  const keys = [...new Set([...Object.keys(A), ...Object.keys(Bv)])];
+  const ch = keys.filter(k => JSON.stringify(A[k]) !== JSON.stringify(Bv[k]));
+  if (d.이름 !== r.이름) ch.unshift('#이름');
+  const rows = ch.map(k => k === '#이름' ? `<tr><td>규칙 이름</td><td>${esc(r.이름)}</td><td><b>${esc(d.이름)}</b></td></tr>` : `<tr><td>${esc(PATH_NAME(k))}</td><td>${A[k] === undefined ? '<span class="muted">(없음)</span>' : esc(A[k])}</td><td><b>${Bv[k] === undefined ? '<span style="color:var(--red)">(삭제)</span>' : esc(Bv[k])}</b></td></tr>`).join('');
+  let impactH = '';
+  if (ch.length) {
+    const Kd = knowledge([...S.approvals, draftApproval(r)]);
+    const date = d.시행일 > base() ? d.시행일 : base();
+    const imp = [];
+    if (r.유형 === '조건판정') SITES.forEach(site => site.변경관리.filter(m => m.상태 === '진행').forEach(m => {
+      const inp = { ...mocFlags(m), 변경완료_예정일: m.변경완료_예정일 };
+      const o = judgeChange(K, inp, date)[0]?.기한 || '대상 아님', nn = judgeChange(Kd, inp, date)[0]?.기한 || '대상 아님';
+      if (o !== nn) imp.push(`<tr><td>${sitePill(site.id)}</td><td>${m.id} ${esc(m.이름)}</td><td>${o}</td><td><b>${nn}</b></td></tr>`); }));
+    if (r.유형 === '결정표') SITES.forEach(site => { const a1 = inspectionSchedule(K, site, date), b1 = inspectionSchedule(Kd, site, date);
+      a1.forEach((x, i) => { if (x.기한 !== b1[i].기한) imp.push(`<tr><td>${sitePill(site.id)}</td><td>${esc(x.시설)}</td><td>${x.기한}</td><td><b>${b1[i].기한}</b></td></tr>`); }); });
+    const g0 = runGolden(K), g1 = runGolden(Kd);
+    const gch = g1.filter((x, i) => x.ok !== g0[i].ok);
+    impactH = `<h3>판정 영향 미리보기 <span class="muted small">(${date} 기준)</span></h3>
+      ${r.유형 === '체크리스트' ? `<p class="small">표시 점검 필수 항목 ${latest(r).필수항목.length}개 → <b>${d.버전.필수항목.length}개</b> · 3개 사업장 라벨 점검·사진 판독에 동일 적용</p>` : imp.length ? `<table style="margin-bottom:8px"><tr><th>사업장</th><th>대상</th><th>현재 결과</th><th>변경 후</th></tr>${imp.join('')}</table>` : '<p class="muted small">사업장 판정 결과 변화 없음</p>'}
+      <p class="small">정답셋 ${g1.length}건: ${gch.length ? `<b style="color:var(--red)">결과가 바뀌는 사례 ${gch.length}건</b> (${gch.map(x => `${x.c.id} ${x.ok ? '실패→통과' : '통과→실패'}`).join(', ')}) — 의도한 변화면 정답셋도 함께 갱신` : '<span class="ok">결과 변화 없음</span>'}</p>`;
+  }
+  return `<h3>변경 확인 · 저장</h3>
+    ${ch.length ? `<table><tr><th>항목</th><th>현재 (v${last.버전})</th><th>변경</th></tr>${rows}</table>` : '<p class="muted">아직 바뀐 내용이 없습니다. 위에서 값을 수정하세요.</p>'}
+    ${impactH}
+    <div class="row" style="align-items:flex-end;margin-top:8px"><label class="field"><span>적용 시행일 (v${last.버전} 시행 ${last.시행일} 이후)</span><input type="date" data-bind="시행일" value="${d.시행일}"></label>
+      <label class="field"><span>승인자</span><select data-bind="승인자">${personOpts(d.승인자, 'HQ')}</select></label>
+      <label class="field" style="flex:1;min-width:200px"><span>수정 사유</span><input type="text" data-bind="의견" value="${esc(d.의견 || '')}" placeholder="예: 내부 기준 강화" style="width:100%"></label></div>
+    <div class="row"><button class="btn green" data-act="save" ${ch.length ? '' : 'disabled'}>새 버전(v${last.버전 + 1})으로 저장</button><button class="btn ghost" data-act="cancel">취소</button></div>`;
+}
+
+// ---- 규정수량 표
+function qtyHtml() {
+  const edit = ED.mode === 'edit' && ED.draft?.id === 'QTY';
+  const rows = ALLCHEM.map(m => { const q = qtyAt(m, base()); const dv = edit ? ED.draft.값[m.CAS] : null;
+    const hist = (K.수량[m.CAS] || []).map(x => `${x.시행일}부터 ${x.하위} t`).join(', ');
+    const mul = SITES.filter(x => x.물질.some(y => y.CAS === m.CAS)).map(x => { const y = x.물질.find(z => z.CAS === m.CAS); return `${x.약칭} ${(y.최대보유량_t / q.하위).toFixed(1)}${edit && dv != q.하위 ? `→<b>${(y.최대보유량_t / dv).toFixed(1)}</b>` : ''}`; }).join(' · ');
+    return `<tr ${edit && dv != q.하위 ? 'style="background:var(--lorange)"' : ''}><td><b>${esc(m.이름)}</b></td><td>${m.CAS}</td><td>${m.사업장들.map(sitePill).join('')}</td>
+      <td class="num">${edit ? `<input type="number" data-cas="${m.CAS}" value="${dv}" style="width:70px">` : `<b>${q.하위}</b>`} t</td><td class="num">${q.상위} t</td><td class="small">${mul}</td><td class="small">${hist || '-'}</td></tr>`; }).join('');
+  return `<div class="result" style="background:#fff;border-color:${edit ? 'var(--orange)' : 'var(--line)'}">
+    <div class="row between"><h3 style="margin:0">물질별 규정수량 표 <span class="pill gray">기준표</span></h3>${edit ? '<span class="pill orange">편집 중</span>' : '<button class="btn blue" data-act="edit">✎ 수정하기</button>'}</div>
+    <p class="muted" style="margin:6px 0">화학물질안전원 고시(유해화학물질별 수량기준)의 값입니다. 배수 계산·계획서 대상 판정·비상대응 등급에 사용됩니다.</p>
+    <div class="scroll"><table><tr><th>물질</th><th>CAS</th><th>사업장</th><th class="num">하위 규정수량</th><th class="num">상위</th><th>사업장별 배수</th><th>개정 이력</th></tr>${rows}</table></div>
+    ${edit ? `<div class="row" style="align-items:flex-end;margin-top:8px"><label class="field"><span>적용 시행일</span><input type="date" id="kxQtyDate" value="${ED.draft.시행일}"></label><label class="field"><span>승인자</span><select id="kxQtyBy">${personOpts('김지훈', 'HQ')}</select></label>
+      <button class="btn green" data-act="qty-save">바뀐 값 저장</button><button class="btn ghost" data-act="cancel">취소</button></div>` : ''}
+  </div>${card('연결된 지식', nbChips('QTY'))}`;
+}
+// ---- 가이드
+function guideHtml(g) {
+  const edit = ED.mode === 'edit' && ED.draft?.id === 'G:' + g.코드, x = edit ? ED.draft.값 : g;
+  const bindT = (k, w) => edit ? `<input type="text" data-bind="값.${k}" value="${esc(x[k])}" style="width:${w}">` : `<b>${esc(x[k])}</b>`;
+  return `<div class="result" style="background:#fff;border-color:${edit ? 'var(--orange)' : 'var(--line)'}">
+    <div class="row between"><h3 style="margin:0">${esc(g.코드)} 지적·조치 가이드</h3>${edit ? '<span class="pill orange">편집 중</span>' : '<button class="btn blue" data-act="edit">✎ 수정하기</button>'}</div>
+    <div class="kv" style="margin-top:8px"><b>지적 유형</b><span>${bindT('지적유형', '100%')}</span>
+      <b>연결 규칙</b><span>${edit ? `<select data-bind="값.규칙">${K.규칙.map(r => `<option ${r.id === x.규칙 ? 'selected' : ''}>${r.id}</option>`).join('')}</select>` : `<span class="chip" data-node="${x.규칙}" style="cursor:pointer">${x.규칙}</span>`}</span>
+      <b>권고 조치</b><span>${edit ? `<textarea data-bind="값.권고조치">${esc(x.권고조치)}</textarea>` : esc(x.권고조치)}</span>
+      <b>근거 조문</b><span><div class="chips" style="margin:0">${x.근거.map(c => citeChip(c, edit ? 'gcite-del' : null)).join('')}${edit ? citeSelect('kxNewCite', x.근거) + '<button class="btn ghost sm" data-act="gcite-add">연결</button>' : ''}</div></span>
+      <b>과거 사례</b><span>${(x.사례 || []).map((c, i) => `<div>${c.연도} · ${esc(c.시설)}: ${esc(c.내용)} ${edit ? `<a href="#" data-act="case-del" data-v="${i}" style="color:var(--red)">삭제</a>` : ''}</div>`).join('')}
+        ${edit ? `<div class="row" style="margin-top:4px"><input type="number" id="kxCy" value="2026" style="width:70px"><input type="text" id="kxCf" placeholder="시설" style="width:120px"><input type="text" id="kxCc" placeholder="지적 내용" style="width:220px"><button class="btn ghost sm" data-act="case-add">사례 추가</button></div>` : ''}</span></div>
+    ${edit ? `<div class="row"><button class="btn green" data-act="guide-save">저장</button><button class="btn ghost" data-act="cancel">취소</button></div>` : ''}
+  </div>${card('연결된 지식', nbChips('G:' + g.코드))}`;
+}
+// ---- 조문
+function artHtml(id) {
+  const vs = K.조문[id];
+  const docs = SITES.flatMap(s0 => s0.문서.filter(d => docLinks(d).includes(id)).map(d => `${s0.약칭} ${d.이름}`));
+  return `<div class="result" style="background:#fff"><h3 style="margin:0 0 4px">${esc(label(vs[0]))} ${esc(vs[0].제목)} <code>${id}</code></h3>
+    <p class="muted small" style="margin:0 0 8px">${esc(vs[0].법령명)} · 법령 원문은 법제처 수집 데이터라 화면에서 직접 고치지 않고, 개정 감지 시 새 버전으로 추가됩니다.</p>
+    ${vs.map((a, i) => `<div class="cite" style="${a.폐지일 ? 'opacity:.6' : ''}"><b>시행 ${a.시행일}${a.폐지일 ? ` ~ ${a.폐지일} (이력)` : ''}</b> <code>${a.해시}</code><br>${i ? cmpBox(vs[i - 1].내용, a.내용, '이전', '개정').replace('class="cmp diff"', 'class="cmp diff" style="margin-top:6px"') : esc(a.내용)}</div>`).join('')}
+    <p class="small" style="margin:8px 0 0">이 조문을 인용하는 사업장 문서 <b>${docs.length}</b>건${docs.length ? `: <span class="muted">${esc(docs.slice(0, 6).join(', '))}${docs.length > 6 ? ' 외' : ''}</span>` : ''}</p></div>
+    ${card('연결된 지식 (이 조문이 바뀌면 영향받는 대상)', nbChips('A:' + id))}`;
+}
+// ---- 문서 유형
+function docHtml(t) {
+  const d0 = SITES[0].문서.find(d => d.유형 === t), links = docLinks(d0);
+  return `<div class="result" style="background:#fff"><h3 style="margin:0 0 4px">${esc(d0.이름)} <span class="pill gray">사업장 문서</span></h3>
+    <p class="muted small" style="margin:0 0 8px">문서가 인용하는 조문을 연결해 두면, 그 조문이 개정될 때 AI가 이 문서를 수정 대상으로 찾습니다. 연결은 바로 추가·삭제할 수 있습니다.</p>
+    <b class="small">연결 조문</b><div class="chips">${links.map(c => c === 'QTY' ? `<span class="chip"><b data-node="QTY" style="cursor:pointer">수량기준 고시</b> <a href="#" data-act="dl-del" data-v="QTY" style="color:var(--red);text-decoration:none">✕</a></span>` : citeChip(c, 'dl-del')).join('')}
+      ${citeSelect('kxNewCite', links)}<button class="btn ghost sm" data-act="dl-add">연결</button></div>
+    <table style="margin-top:8px"><tr><th>사업장</th><th>문서 번호</th><th>개정</th><th>담당</th></tr>${SITES.map(s0 => { const d = s0.문서.find(x => x.유형 === t); return d ? `<tr><td>${sitePill(s0.id)}</td><td>${esc(d.번호)}</td><td class="small">${esc(d.개정)}</td><td>${esc(d.담당자)}</td></tr>` : ''; }).join('')}</table></div>
+    ${card('연결된 지식', nbChips('D:' + t))}`;
+}
+function noticeKHtml(n) {
+  return `<div class="result" style="background:#fff"><h3 style="margin:0 0 4px">${esc(n.제목)}</h3><p class="muted small">${esc(n.공포번호)} · 공포 ${n.공포일} · 시행 ${n.시행일}</p><p>${esc(n.요약)}</p>
+    <div class="row"><button class="btn ghost sm" data-act="go-cmp" data-v="${n.id}">신·구 비교 보기</button><button class="btn ghost sm" data-act="go-ana" data-v="${n.id}">영향 분석·조치 보기</button></div></div>${card('이 고시가 바꾸는 조문', nbChips('N:' + n.id))}`;
+}
+function interpHtml(iid) {
+  const isNew = iid === 'NEW';
+  const edit = isNew || (ED.mode === 'edit' && ED.draft?.id === 'I:' + iid);
+  const x = edit ? ED.draft.값 : K.해석.find(y => y.id === iid);
+  const t = (k, w = '100%') => edit ? `<input type="text" data-bind="값.${k}" value="${esc(x[k] || '')}" style="width:${w}">` : esc(x[k]);
+  const ta = k => edit ? `<textarea data-bind="값.${k}">${esc(x[k] || '')}</textarea>` : esc(x[k]);
+  const sel = (k, opts) => edit ? `<select data-bind="값.${k}">${opts.map(o => `<option ${o === x[k] ? 'selected' : ''}>${o}</option>`).join('')}</select>` : `<b>${esc(x[k])}</b>`;
+  const ruleSel = `<select id="kxIntRule"><option value="">+ 규칙 연결</option>${K.규칙.filter(r => !x.적용규칙.includes(r.id)).map(r => `<option value="${r.id}">${r.id} ${esc(r.이름)}</option>`).join('')}</select>`;
+  return `<div class="result" style="background:#fff;border-color:${edit ? 'var(--orange)' : TYPE_COLOR.해석}">
+    <div class="row between"><h3 style="margin:0"><span class="pill" style="background:${TYPE_COLOR.해석}">해석·판단</span> ${isNew ? '새 해석·판단 등록' : `${esc(x.id)} ${esc(x.제목)}`}</h3>${edit ? '<span class="pill orange">편집 중</span>' : '<button class="btn blue" data-act="edit">✎ 수정하기</button>'}</div>
+    <p class="muted small" style="margin:6px 0">법령 문구만으로 판단이 애매한 경우, 기후에너지환경부 유권해석·질의회신이나 컨설턴트 판단을 근거와 함께 지식으로 남깁니다. 판정 규칙과 연결되어 판정 결과 화면에 함께 표시됩니다.</p>
+    <div class="kv" style="grid-template-columns:100px 1fr"><b>구분</b><span>${sel('구분', INT_KIND)} ${edit ? '' : ''}</span>
+      <b>제목</b><span>${t('제목')}</span><b>질의 (쟁점)</b><span>${ta('질의')}</span><b>판단 (답변)</b><span>${edit ? ta('판단') : `<b>${esc(x.판단)}</b>`}</span>
+      <b>출처</b><span>${t('출처')} ${edit ? '<div class="muted small">예: 기후에너지환경부 질의회신 (문서번호, 일자) / 컨설팅본부 검토의견 번호</div>' : ''}</span>
+      <b>신뢰 수준</b><span>${sel('신뢰수준', ['공식', '내부'])} <span class="muted small">공식 = 정부·기관 해석, 내부 = 컨설턴트·사내 판단</span></span>
+      <b>상태</b><span>${sel('상태', ['유효', '검토 중', '폐기'])}</span><b>일자</b><span>${edit ? `<input type="date" data-bind="값.일자" value="${esc(x.일자 || base())}">` : esc(x.일자)}</span>
+      <b>확인자</b><span>${edit ? `<select data-bind="값.확인자">${personOpts(x.확인자, 'HQ')}</select>` : esc(x.확인자)}</span>
+      <b>관련 조문</b><span><div class="chips" style="margin:0">${x.관련조문.map(c => citeChip(c, edit ? 'icite-del' : null)).join('')}${edit ? citeSelect('kxNewCite', x.관련조문) + '<button class="btn ghost sm" data-act="icite-add">연결</button>' : ''}</div></span>
+      <b>적용 규칙</b><span><div class="chips" style="margin:0">${x.적용규칙.map(r => `<span class="chip"><b data-node="${r}" style="cursor:pointer">${r}</b>${edit ? ` <a href="#" data-act="irule-del" data-v="${r}" style="color:var(--red);text-decoration:none">✕</a>` : ''}</span>`).join('')}${edit ? ruleSel + '<button class="btn ghost sm" data-act="irule-add">연결</button>' : ''}</div></span>
+      <b>적용 방법</b><span>${ta('적용방법')}</span></div>
+    ${edit ? `<div class="row"><button class="btn green" data-act="int-save">저장</button><button class="btn ghost" data-act="cancel">취소</button></div>` : ''}
+  </div>${isNew ? '' : card('연결된 지식', nbChips('I:' + iid))}`;
+}
+function newRuleHtml() {
+  return `<div class="result" style="background:#fff;border-color:var(--orange)"><h3>새 점검 규칙 추가 (체크리스트형)</h3>
+    <div class="field"><span>규칙 이름</span><input type="text" id="nrName" style="width:100%" placeholder="예: 저장탱크 방류벽 점검 항목"></div>
+    <div class="field"><span>근거 조문</span>${citeSelect('nrCite')}</div>
+    <div class="field"><span>점검 항목 (한 줄에 하나)</span><textarea id="nrItems" placeholder="방류벽 용량 110% 이상&#10;배수 밸브 평상시 잠금&#10;방류벽 내부 균열 없음"></textarea></div>
+    <div class="row"><label class="row small">시행일 <input type="date" id="nrDate" value="${base()}"></label><button class="btn green" data-act="nr-save">규칙 추가</button><button class="btn ghost" data-act="cancel">취소</button></div></div>`;
+}
+
+// ---- 이벤트
+function setPath(o, path, val) { const ks = path.split('.'); let x = o; ks.slice(0, -1).forEach(k => { x = x[k]; }); x[ks[ks.length - 1]] = val; }
+function selectNode(id) { ED.sel = id; ED.mode = 'view'; ED.draft = null; ED.verView = null; renderKX(); }
+function refreshDetail() { $('kxDetail').innerHTML = detailHtml(); $('kxGraph').innerHTML = graphSvg(); $('kxNav').innerHTML = navHtml(); }
+function bindKX() {
+  const box = $('kx');
+  box.onmouseover = e => { const g = e.target.closest('#kxGraph [data-node]'); const h = g ? g.dataset.node : null; if (h !== ED.hover) { ED.hover = h; $('kxGraph').innerHTML = graphSvg(); } };
+  box.onmouseleave = () => { if (ED.hover) { ED.hover = null; $('kxGraph').innerHTML = graphSvg(); } };
+  $('kxQ').oninput = e => { ED.q = e.target.value; $('kxNav').innerHTML = navHtml(); };
+  box.oninput = e => {
+    const b = e.target.dataset.bind; if (!b || !ED.draft) return;
+    let v = e.target.value; if (e.target.dataset.num) v = Number(v);
+    if (b.endsWith('.위험도') && v === '') v = undefined;
+    setPath(ED.draft, b, v);
+    if (b === '버전.결과.기한.일수' && $('kxDaysTxt')) $('kxDaysTxt').textContent = daysTxt(v);
+    const r = K.규칙.find(x => x.id === ED.draft.id); if (r && $('kxReview') && !['승인자', '의견', '시행일'].includes(b)) $('kxReview').innerHTML = reviewHtml(r);
+  };
+  box.onchange = e => { if (e.target.dataset.bind === '시행일' && ED.draft) { const r = K.규칙.find(x => x.id === ED.draft.id); if (r) $('kxReview').innerHTML = reviewHtml(r); return; } if (e.target.dataset.cas && ED.draft) { ED.draft.값[e.target.dataset.cas] = Number(e.target.value); refreshDetail(); } };
+  box.onclick = e => {
+    const nodeEl = e.target.closest('[data-node]'); const actEl = e.target.closest('[data-act]');
+    if (actEl) { e.preventDefault(); return kxAct(actEl.dataset.act, actEl.dataset.v); }
+    if (nodeEl && !e.target.closest('input,select,textarea')) { e.preventDefault(); selectNode(nodeEl.dataset.node); }
   };
 }
-$('edRule').onchange = renderEditor;
-$('nrDate').value = today;
-$('nrCite').innerHTML = Object.keys(B.조문).map(x => `<option>${x}</option>`).join('');
-$('nrBtn').onclick = () => {
-  const name = $('nrName').value.trim(), items = $('nrItems').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (!name || !items.length) return toast('규칙 이름과 점검 항목을 입력하세요');
-  const id = `R-NEW-${S.approvals.filter(a => a.종류 === '새규칙').length + 1}`;
-  const rule = { id, 이름: name, 유형: '체크리스트', 대상: '점검', 설명: '전문가가 직접 추가한 점검 규칙', 버전: [{ 버전: 1, 시행일: $('nrDate').value, 폐지일: null, 승인: '김지훈 승인 (직접 추가)', 근거: [$('nrCite').value], 필수항목: items, 결과: { 조치: '미충족 항목 보완' } }] };
-  S.approvals.push({ notice: null, 규칙: id, 종류: '새규칙', 값: rule, 시행일: rule.버전[0].시행일, 승인자: '김지훈', 일시: nowStr() });
-  log(`새 점검 규칙 추가: ${id} ${name} (${items.length}개 항목)`); save(); K = knowledge(); renderEditor(); showYaml({ 종류: '새규칙', 값: rule });
-  $('nrName').value = ''; $('nrItems').value = ''; toast(`${id} 규칙을 추가했습니다 (⑥ 지식 기반에서 확인)`);
-};
+function kxAct(a, v) {
+  const id = ED.sel, r = K.규칙.find(x => x.id === id), d = ED.draft;
+  const done = (msg, apr) => { if (apr) S.approvals.push(apr); save(); K = knowledge(); ED.mode = 'view'; ED.draft = null; ED.verView = null; renderKX(); toast(msg); if (apr) showYaml(apr); };
+  switch (a) {
+    case 'new': ED.sel = 'NEW'; ED.mode = 'edit'; return refreshDetail();
+    case 'new-int': { const nid = `I-${String(K.해석.length + 1).padStart(3, '0')}`;
+      ED.draft = { id: 'I:NEW', 값: { id: nid, 구분: '유권해석', 제목: '', 질의: '', 판단: '', 출처: '', 확인자: '김지훈', 신뢰수준: '공식', 상태: '검토 중', 일자: base(), 관련조문: [], 적용규칙: v ? [v] : [], 적용방법: '' } };
+      if (v) { const r0 = K.규칙.find(y => y.id === v); ED.draft.값.관련조문 = [...latest(r0).근거.slice(0, 1)]; }
+      ED.sel = 'I:NEW'; ED.mode = 'edit'; return refreshDetail(); }
+    case 'icite-del': d.값.관련조문 = d.값.관련조문.filter(x => x !== v); return refreshDetail();
+    case 'icite-add': { const c = $('kxNewCite').value; if (c) d.값.관련조문.push(c); return refreshDetail(); }
+    case 'irule-del': d.값.적용규칙 = d.값.적용규칙.filter(x => x !== v); return refreshDetail();
+    case 'irule-add': { const c = $('kxIntRule').value; if (c) d.값.적용규칙.push(c); return refreshDetail(); }
+    case 'int-save': {
+      const x = d.값; if (!x.제목.trim() || !x.판단.trim()) return toast('제목과 판단(답변)을 입력하세요');
+      if (!x.관련조문.length) return toast('관련 조문을 하나 이상 연결하세요');
+      log(`해석·판단 ${d.id === 'I:NEW' ? '등록' : '수정'}: ${x.id} [${x.구분}] ${x.제목} (${x.상태})`, x.확인자);
+      ED.sel = 'I:' + x.id;
+      return done(`${x.id} 해석·판단을 저장했습니다 — 연결된 규칙의 판정 화면에 함께 표시됩니다`, { notice: null, 종류: '해석편집', 값: x, 시행일: base(), 승인자: x.확인자, 일시: nowStr() }); }
+    case 'ver': ED.verView = +v; return refreshDetail();
+    case 'edit':
+      if (id === 'QTY') ED.draft = { id, 시행일: base(), 값: Object.fromEntries(ALLCHEM.map(m => [m.CAS, qtyAt(m, base()).하위])) };
+      else if (id.startsWith('G:')) ED.draft = { id, 값: clone(K.가이드.find(g => g.코드 === id.slice(2))) };
+      else if (id.startsWith('I:')) ED.draft = { id, 값: clone(K.해석.find(g => g.id === id.slice(2))) };
+      else { const last = latest(r); ED.draft = { id, 이름: r.이름, 설명: r.설명, 버전: clone(last), 시행일: last.시행일 >= base() ? addDays(last.시행일, 1) : base(), 승인자: '김지훈', 의견: '' }; }
+      ED.mode = 'edit'; return refreshDetail();
+    case 'cancel': ED.mode = 'view'; ED.draft = null; if (id === 'NEW' || id === 'I:NEW') ED.sel = 'R-23-3'; return refreshDetail();
+    case 'days': d.버전.결과.기한.일수 += +v; return refreshDetail();
+    case 'cond-del': d.버전.조건.any.splice(+v, 1); return refreshDetail();
+    case 'cond-add': { const f = $('kxNewField').value, c = $('kxNewFieldCite').value; if (!f) return toast('추가할 조건을 고르세요'); d.버전.조건.any.push({ 필드: f, 같음: true, 설명: FIELD_NAME[f], 근거: c || d.버전.근거[0] }); return refreshDetail(); }
+    case 'row-add': d.버전.결정표.splice(d.버전.결정표.length - 1, 0, { 사업장군: '2군', 주기_년: 3 }); return refreshDetail();
+    case 'row-del': d.버전.결정표.splice(+v, 1); return refreshDetail();
+    case 'item-del': d.버전.필수항목.splice(+v, 1); return refreshDetail();
+    case 'item-add': { const t = $('kxNewItem').value.trim(); if (!t) return; d.버전.필수항목.push(t); return refreshDetail(); }
+    case 'cite-del': d.버전.근거 = d.버전.근거.filter(x => x !== v); return refreshDetail();
+    case 'cite-add': { const c = $('kxNewCite').value; if (c) d.버전.근거.push(c); return refreshDetail(); }
+    case 'save': {
+      const last = latest(r);
+      if (d.시행일 <= last.시행일) return toast(`시행일은 v${last.버전} 시행일(${last.시행일}) 이후여야 합니다`);
+      const apr = draftApproval(r);
+      log(`지식 편집: ${r.id} v${last.버전 + 1} 저장 (시행 ${d.시행일})${d.의견 ? ' — ' + d.의견 : ''}`, d.승인자);
+      return done(`${r.id} v${last.버전 + 1}을 저장했습니다 (${d.시행일}부터 적용)`, apr);
+    }
+    case 'qty-save': {
+      const date = $('kxQtyDate').value, by = $('kxQtyBy').value;
+      const chg = ALLCHEM.filter(m => d.값[m.CAS] !== qtyAt(m, base()).하위);
+      if (!chg.length) return toast('바뀐 값이 없습니다');
+      chg.forEach(m => S.approvals.push({ notice: null, 규칙: '수량기준', 종류: '수량기준', CAS: m.CAS, 값: d.값[m.CAS], 시행일: date, 승인자: by, 일시: nowStr(), 의견: '규정수량 표 직접 편집' }));
+      log(`규정수량 표 편집: ${chg.map(m => `${m.이름} ${qtyAt(m, base()).하위}→${d.값[m.CAS]} t`).join(', ')} (시행 ${date})`, by);
+      return done(`규정수량 ${chg.length}건을 저장했습니다`, null);
+    }
+    case 'gcite-del': d.값.근거 = d.값.근거.filter(x => x !== v); return refreshDetail();
+    case 'gcite-add': { const c = $('kxNewCite').value; if (c) d.값.근거.push(c); return refreshDetail(); }
+    case 'case-add': { const c = $('kxCc').value.trim(); if (!c) return; (d.값.사례 ||= []).push({ 연도: +$('kxCy').value, 시설: $('kxCf').value.trim() || '-', 내용: c }); return refreshDetail(); }
+    case 'case-del': d.값.사례.splice(+v, 1); return refreshDetail();
+    case 'guide-save': log(`가이드 편집: ${d.값.코드} ${d.값.지적유형}`); return done('가이드를 저장했습니다', { notice: null, 종류: '가이드편집', 값: d.값, 시행일: base(), 승인자: '김지훈', 일시: nowStr() });
+    case 'dl-del': case 'dl-add': {
+      const t = id.slice(2), d0 = SITES[0].문서.find(x => x.유형 === t); S.docLinks ||= {};
+      const cur0 = [...docLinks(d0)];
+      if (a === 'dl-del') S.docLinks[t] = cur0.filter(x => x !== v);
+      else { const c = $('kxNewCite').value; if (!c) return; S.docLinks[t] = [...cur0, c]; }
+      log(`문서 연결 변경: ${d0.이름} → ${S.docLinks[t].join(', ')}`); save(); return refreshDetail();
+    }
+    case 'nr-save': {
+      const name = $('nrName').value.trim(), items = $('nrItems').value.split('\n').map(x => x.trim()).filter(Boolean);
+      if (!name || !items.length) return toast('규칙 이름과 점검 항목을 입력하세요');
+      const nid = `R-NEW-${S.approvals.filter(x => x.종류 === '새규칙').length + 1}`;
+      const rule = { id: nid, 이름: name, 유형: '체크리스트', 대상: '점검', 설명: '전문가가 직접 추가한 점검 규칙', 버전: [{ 버전: 1, 시행일: $('nrDate').value, 폐지일: null, 승인: '김지훈 승인 (직접 추가)', 근거: [$('nrCite').value].filter(Boolean), 필수항목: items, 결과: { 조치: '미충족 항목 보완' } }] };
+      log(`새 점검 규칙 추가: ${nid} ${name} (${items.length}개 항목)`);
+      ED.sel = nid;
+      return done(`${nid} 규칙을 추가했습니다 — 그래프에 연결되었습니다`, { notice: null, 규칙: nid, 종류: '새규칙', 값: rule, 시행일: rule.버전[0].시행일, 승인자: '김지훈', 일시: nowStr() });
+    }
+    case 'go-cmp': cur = v; return renderCmp();
+    case 'go-ana': return goNotice(v, 't3');
+  }
+}
+
 function toYaml(o, ind = '') {
   if (Array.isArray(o)) return o.map(x => typeof x === 'object' && x ? `${ind}- ${toYaml(x, ind + '  ').trimStart()}` : `${ind}- ${x}`).join('\n');
   return Object.entries(o).map(([k, v]) => v && typeof v === 'object' ? `${ind}${k}:\n${toYaml(v, ind + '  ')}` : `${ind}${k}: ${v ?? 'null'}`).join('\n');
@@ -569,6 +940,8 @@ function showYaml(a) {
   if (a.종류 === '새규칙') y = `# rules/${a.값.id}.yaml (신규)\n` + toYaml(a.값);
   else if (a.종류 === '수량기준') y = `# data/knowledge/thresholds.yaml (행 추가)\n` + toYaml([{ CAS: a.CAS, 하위_규정수량_t: a.값, 시행일: a.시행일, 승인: a.승인자 }]);
   else if (a.종류 === '확인') y = '# 판정 값 변경 없음 — 근거 조문 버전만 갱신';
+  else if (a.종류 === '해석편집') y = `# data/knowledge/interpretations.yaml — ${a.값.id} 항목\n` + toYaml([a.값]);
+  else if (a.종류 === '가이드편집') y = `# guides/guides.yaml — ${a.값.코드} 항목 수정\n` + toYaml([a.값]);
   else { const r = K.규칙.find(x => x.id === a.규칙); y = `# rules/${r.id}.yaml — '버전' 목록에 추가 (이전 버전은 폐지일 ${a.시행일}로 보존)\n버전:\n` + toYaml([r.버전[r.버전.length - 1]], '  '); }
   $('yamlOut').textContent = y; $('yamlBox').classList.remove('hidden');
 }
@@ -633,7 +1006,8 @@ function runJudge() {
       <div class="kv"><b>제출 기한</b><span><b style="color:var(--red)">${esc(r.기한)}</b> ${d !== null ? `(${dday(r.기한)})` : ''} · ${esc(r.기한설명)}</span>
       <b>제출처</b><span>${esc(r.제출처)}</span><b>서식</b><span>${esc(r.서식)}</span><b>해당 사유</b><span>${r.사유.map(m => esc(m.설명)).join(', ')}</span>
       <b>적용 규칙</b><span><span class="pill navy">${esc(r.규칙)} v${r.버전}</span> 시행 ${esc(r.시행일)}</span></div>
-      <details><summary>근거 조문 원문 보기</summary>${citeHtml(r.근거)}</details></div>`;
+      <details><summary>근거 조문 원문 보기</summary>${citeHtml(r.근거)}</details>
+      ${intOf(r.규칙).length ? `<details open><summary>관련 해석·판단 ${intOf(r.규칙).length}건</summary>${intCards(intOf(r.규칙))}</details>` : ''}</div>`;
   }).join('');
 }
 $('judgeBtn').onclick = runJudge;
@@ -649,8 +1023,18 @@ $('labelBtn').onclick = () => {
     : `<div class="result hit"><h3><span class="pill red">표시 미흡</span> 누락: ${r.누락.map(esc).join(', ')}</h3>
        <div class="kv"><b>조치</b><span>${esc(r.조치)}</span><b>지적 유형</b><span>${esc(r.가이드?.코드)} ${esc(r.가이드?.지적유형)}</span>
        <b>권고 조치</b><span>${esc(r.가이드?.권고조치)}</span><b>과거 사례</b><span>${(r.가이드?.사례 || []).map(s => `${s.연도} ${esc(s.시설)}: ${esc(s.내용)}`).join('<br>')}</span></div>
-       <details><summary>근거 조문</summary>${citeHtml(r.근거)}</details></div>`;
+       <details><summary>근거 조문</summary>${citeHtml(r.근거)}</details>
+       ${intOf(r.규칙).length ? `<details open><summary>관련 해석·판단 ${intOf(r.규칙).length}건</summary>${intCards(intOf(r.규칙))}</details>` : ''}</div>`;
 };
+function runGolden(Kx) {
+  return Kx.정답셋.map(c => {
+    let act;
+    if (c.유형 === '변경판정') { const r = judgeChange(Kx, c.입력, c.기준일); act = { 규칙: r.map(x => x.규칙), 기한: r[0]?.기한 }; }
+    else if (c.유형 === '정기검사') act = inspectionSchedule(Kx, { ...SITE0, 시설: SITE0.시설.filter(f => f.id === c.입력.시설) }, c.기준일)[0];
+    else act = checkLabel(Kx, c.입력.항목, c.기준일);
+    return { c, act, ok: Object.entries(c.기대).every(([k, v]) => JSON.stringify(v) === JSON.stringify(act[k])) };
+  });
+}
 function renderKnowledge() {
   renderLabelChecks();
   if ($('judgeOut').innerHTML) runJudge();
@@ -665,13 +1049,7 @@ function renderKnowledge() {
     arts.map(a => `<tr><td>${a.id}</td><td>${esc(label(a))}</td><td>${esc(a.제목)}</td><td>${a.시행일}</td><td>${a.폐지일 || '-'}</td><td><code>${a.해시}</code></td><td class="small">${esc(a.내용)}</td></tr>`).join('');
   $('guideTable').innerHTML = `<tr><th>코드</th><th>지적 유형</th><th>연결 규칙</th><th>근거 조문</th><th>권고 조치</th></tr>` +
     K.가이드.map(g => `<tr><td>${g.코드}</td><td>${esc(g.지적유형)}</td><td>${g.규칙}</td><td>${g.근거.join(', ')}</td><td>${esc(g.권고조치)}</td></tr>`).join('');
-  const results = K.정답셋.map(c => {
-    let act;
-    if (c.유형 === '변경판정') { const r = judgeChange(K, c.입력, c.기준일); act = { 규칙: r.map(x => x.규칙), 기한: r[0]?.기한 }; }
-    else if (c.유형 === '정기검사') act = inspectionSchedule(K, { ...SITE0, 시설: SITE0.시설.filter(f => f.id === c.입력.시설) }, c.기준일)[0];
-    else act = checkLabel(K, c.입력.항목, c.기준일);
-    return { c, ok: Object.entries(c.기대).every(([k, v]) => JSON.stringify(v) === JSON.stringify(act[k])) };
-  });
+  const results = runGolden(K);
   $('testTable').innerHTML = `<tr><th>사례</th><th>유형</th><th>기준일</th><th>내용</th><th>결과</th></tr>` +
     results.map(({ c, ok }) => `<tr><td>${c.id}</td><td>${c.유형}</td><td>${c.기준일}</td><td>${esc(c.설명)}</td><td><span class="pill ${ok ? 'green' : 'red'}">${ok ? '통과' : '실패'}</span></td></tr>`).join('');
 }

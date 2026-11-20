@@ -8,6 +8,7 @@ bundle.정답셋 = readYaml('tests/golden.yaml');
 bundle.고시 = readYaml('data/notices/notices.yaml');
 bundle.사업장목록 = ['data/sites/oo-plant.json', 'data/sites/yeosu.json', 'data/sites/daesan.json'].map(readJson);
 bundle.본사 = readJson('data/sites/hq.json');
+bundle.해석 = readYaml('data/knowledge/interpretations.yaml');
 bundle.빌드 = { 시각: new Date().toISOString(), 커밋: process.env.GITHUB_SHA?.slice(0, 7) || 'local', 저장소: process.env.GITHUB_REPOSITORY || '' };
 writeJson('web/data/bundle.json', bundle);
 fs.copyFileSync(path.join(ROOT, 'src/engine.js'), path.join(ROOT, 'web/engine.js'));
