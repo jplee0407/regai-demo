@@ -1,0 +1,16 @@
+{
+  "name": "regai-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "법규 개정 영향 진단 및 조치계획 자동 수립 - 시연용 저장소",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/test.mjs",
+    "watch-law": "node scripts/watch-law.mjs",
+    "simulate": "node scripts/watch-law.mjs --simulate simulations/sim-rule19-6.yaml"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}

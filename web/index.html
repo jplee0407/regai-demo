@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>법규 개정 영향 진단 시연</title>
+<style>
+  :root {
+    --navy: #1B2F5B; --blue: #2D5FA8; --lblue: #9DB9E0; --bg: #EEF3FA; --orange: #C9822B; --lorange: #FBF1E1;
+    --red: #D64541; --green: #3A9B6A; --text: #1F2A3C; --sub: #5B6577; --line: #D3DCEA; --page: #F6F8FC; --card: #FFFFFF;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; background: var(--page); color: var(--text); font-size: 14px; line-height: 1.55; }
+  header { background: var(--navy); color: #fff; padding: 18px 24px; }
+  header h1 { margin: 0; font-size: 19px; }
+  header p { margin: 4px 0 0; color: #C9D7EC; font-size: 12.5px; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 16px 48px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin: 16px 0; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tabs button { border: 1px solid var(--line); background: #fff; color: var(--sub); padding: 8px 14px; border-radius: 8px; cursor: pointer; font: inherit; }
+  .tabs button.on { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 700; }
+  .date { display: flex; gap: 8px; align-items: center; color: var(--sub); }
+  input[type=date], select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(27,47,91,.06); }
+  .card h2 { margin: 0 0 4px; font-size: 16px; color: var(--navy); }
+  .card .desc { color: var(--sub); margin: 0 0 14px; font-size: 13px; }
+  .grid2 { display: grid; grid-template-columns: 360px 1fr; gap: 14px; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+  label.chk { display: flex; gap: 8px; align-items: center; padding: 6px 4px; cursor: pointer; }
+  label.chk small { color: var(--sub); }
+  .field { margin: 10px 0; }
+  .field span { display: block; font-size: 12px; color: var(--sub); font-weight: 700; margin-bottom: 4px; }
+  .btn { background: var(--navy); color: #fff; border: 0; border-radius: 8px; padding: 9px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+  .result { border-left: 0; border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 10px; background: #fff; }
+  .result.hit { border-color: var(--orange); background: var(--lorange); }
+  .result h3 { margin: 0 0 6px; font-size: 15px; color: var(--navy); }
+  .pill { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; color: #fff; background: var(--blue); margin-right: 4px; }
+  .pill.red { background: var(--red); } .pill.green { background: var(--green); } .pill.orange { background: var(--orange); } .pill.gray { background: #9AA5B4; } .pill.navy { background: var(--navy); }
+  .kv { display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; margin: 8px 0; font-size: 13px; }
+  .kv b { color: var(--sub); font-weight: 700; }
+  details { margin-top: 6px; } summary { cursor: pointer; color: var(--blue); font-weight: 700; font-size: 13px; }
+  .cite { background: var(--bg); border-radius: 8px; padding: 8px 10px; margin: 6px 0; font-size: 12.5px; }
+  .cite b { color: var(--navy); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: var(--navy); color: #fff; padding: 8px; text-align: left; font-weight: 700; }
+  td { border-bottom: 1px solid var(--line); padding: 8px; vertical-align: top; }
+  tr:nth-child(even) td { background: #F8FAFD; }
+  .muted { color: var(--sub); font-size: 12.5px; }
+  .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 860px) { .flow { grid-template-columns: 1fr 1fr; } }
+  .step { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .step .n { display: inline-flex; width: 24px; height: 24px; border-radius: 50%; background: var(--blue); color: #fff; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; margin-right: 6px; }
+  .step b { color: var(--navy); }
+  .step p { margin: 6px 0 0; font-size: 12.5px; color: var(--sub); }
+  .step .gh { font-size: 11.5px; color: var(--orange); font-weight: 700; margin-top: 6px; }
+  a { color: var(--blue); }
+  .hidden { display: none; }
+  .note { background: var(--lorange); border: 1px solid #E6C08A; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: #7A5418; margin-bottom: 14px; }
+  code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>법규 개정 영향 진단 및 조치계획 자동 수립 · 시연</h1>
+  <p id="buildinfo">화학물질관리법 · 시행규칙 발췌 기반 · 가상 사업장 데이터</p>
+</header>
+<div class="wrap">
+  <div class="bar">
+    <div class="tabs" id="tabs">
+      <button data-t="t1" class="on">① 변경 판정</button>
+      <button data-t="t2">② 정기검사 일정</button>
+      <button data-t="t3">③ 표시 점검</button>
+      <button data-t="t4">④ 지식 기반</button>
+      <button data-t="t5">⑤ 개정 반영 흐름</button>
+    </div>
+    <label class="date">기준일 <input type="date" id="baseDate"></label>
+  </div>
+  <div class="note">시연용입니다. 조문은 발췌·요약본이며 사업장·시설은 가상 데이터입니다. 판정은 AI가 아니라 규칙(결정표)으로 수행하고, 모든 결과에 규칙 버전과 근거 조문을 표시합니다.</div>
+
+  <section id="t1">
+    <div class="grid2">
+      <div class="card">
+        <h2>변경 내용 입력</h2>
+        <p class="desc">시설 변경 계획을 입력하면 계획서 변경 제출 대상인지 판정하고 기한을 계산합니다.</p>
+        <div class="field"><span>대상 시설</span><select id="facility"></select></div>
+        <div id="changeChecks"></div>
+        <div class="field"><span>변경완료 예정일</span><input type="date" id="doneDate" value="2027-03-31"></div>
+        <button class="btn" id="judgeBtn">판정하기</button>
+      </div>
+      <div><div class="card"><h2>판정 결과</h2><p class="desc" id="judgeHint">왼쪽에서 변경 내용을 고르고 판정하기를 누르세요.</p><div id="judgeOut"></div></div></div>
+    </div>
+  </section>
+
+  <section id="t2" class="hidden">
+    <div class="card">
+      <h2>취급시설 정기검사 일정</h2>
+      <p class="desc" id="siteInfo"></p>
+      <div style="overflow-x:auto"><table id="inspTable"></table></div>
+      <details><summary>근거 조문</summary><div id="inspCite"></div></details>
+    </div>
+  </section>
+
+  <section id="t3" class="hidden">
+    <div class="grid2">
+      <div class="card"><h2>용기·포장 표시 항목</h2><p class="desc">현재 라벨에 있는 항목을 체크하세요. (현장 사진 판독 결과가 들어오는 자리)</p><div id="labelChecks"></div><button class="btn" id="labelBtn">점검하기</button></div>
+      <div class="card"><h2>점검 결과</h2><div id="labelOut" class="desc">점검하기를 누르세요.</div></div>
+    </div>
+  </section>
+
+  <section id="t4" class="hidden">
+    <div class="card"><h2>판정 규칙</h2><p class="desc">규칙은 버전과 시행일을 갖고, 기준일에 시행 중인 버전으로만 판정합니다.</p><div id="rulesOut"></div></div>
+    <div class="card"><h2>조문 (시행일별 버전)</h2><p class="desc">조문 내용의 해시값이 바뀌면 개정으로 감지합니다.</p><div style="overflow-x:auto"><table id="lawTable"></table></div></div>
+    <div class="card"><h2>지적·조치 가이드</h2><div style="overflow-x:auto"><table id="guideTable"></table></div></div>
+    <div class="card"><h2>정답셋 회귀 테스트 (브라우저에서 실행)</h2><div style="overflow-x:auto"><table id="testTable"></table></div></div>
+  </section>
+
+  <section id="t5" class="hidden">
+    <div class="card">
+      <h2>법령이 바뀌면 이렇게 반영됩니다</h2>
+      <p class="desc">GitHub 기능이 그대로 지식 갱신 절차가 됩니다. 아래 링크로 실제 동작을 확인할 수 있습니다.</p>
+      <div class="flow" id="flow"></div>
+    </div>
+    <div class="card">
+      <h2>직접 시연하기</h2>
+      <ol class="muted" style="line-height:1.9">
+        <li>저장소 <a id="lnkActions" target="_blank">Actions</a> → <b>법령 개정 감시</b> → <b>Run workflow</b> → mode에서 <code>simulate</code> 선택 후 실행</li>
+        <li>몇십 초 뒤 <a id="lnkPulls" target="_blank">Pull requests</a>에 "[가상 개정]" 갱신안이 올라옴 (신·구 대조, 영향 분석, AI 규칙 초안, 판정 변화 미리보기 포함)</li>
+        <li>PR 본문 맨 아래의 정답셋 회귀 테스트 결과 확인 → <b>Review → Approve</b> → <b>Merge</b></li>
+        <li>몇 분 뒤 이 화면이 새 규칙으로 갱신됨. 기준일을 2027-01-15로 바꾸고 ① 변경 판정을 다시 하면 기한이 60일 전으로 계산됨</li>
+        <li>되돌리려면 병합된 PR의 <b>Revert</b> 버튼 → 이전 규칙으로 복구</li>
+      </ol>
+    </div>
+  </section>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
