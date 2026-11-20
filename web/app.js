@@ -832,8 +832,9 @@ function renderKX() { try { return renderKX0(); } catch (err) { console.error(er
 function renderKX0() {
   if (RV.view !== '관계도') return curTab === 't8' ? renderReview() : null;
   const host = $('kxHost'); if (!host) return;
+  if ($('rvDetail')) $('rvDetail').innerHTML = '';
   host.innerHTML = '<div id="kx"></div>';
-  const box = $('kx');
+  const box = host.querySelector('#kx');
   const legend = Object.entries({ 고시: '고시·개정', 조문: '법령 조문', 규칙: '판정 규칙·기준표', 가이드: '지적·조치 가이드', 해석: '해석·판단 (유권해석·컨설턴트)', 문서: '사업장 문서' })
     .map(([k, v]) => `<span><i style="background:${TYPE_COLOR[k]}"></i>${v}</span>`).join('') +
     '<span style="margin-left:10px">선: <b style="color:#C9822B">개정</b> · <b style="color:#2D5FA8">근거</b> · <b style="color:#3A9B6A">연결</b> · <b style="color:#6B5BA8">인용</b> · <b style="color:#B5487A">해석·적용</b> · <b style="color:#9AA5B4">위임(점선)</b></span>';
@@ -863,9 +864,10 @@ function neighbors(id) {
   const nm = Object.fromEntries(nodes.map(n => [n.id, n]));
   return edges.filter(e => e.a === id || e.b === id).map(e => ({ n: nm[e.a === id ? e.b : e.a], t: e.t, dir: e.a === id ? '→' : '←' }));
 }
-const nbChips = id => { const xs = neighbors(id); return xs.length ? `<div class="chips">${xs.map(x => `<span class="chip" data-node="${esc(x.n.id)}" style="cursor:pointer;border-color:${TYPE_COLOR[x.n.type]}"><span class="muted">${x.t}</span> <b>${esc(x.n.label)}</b></span>`).join('')}</div>` : '<p class="muted">연결된 지식이 없습니다.</p>'; };
+const nbChips = (id, skip = []) => { const xs = neighbors(id).filter(x => !skip.includes(x.n.type)); return xs.length ? `<div class="chips">${xs.map(x => `<span class="chip" data-node="${esc(x.n.id)}" style="cursor:pointer;border-color:${TYPE_COLOR[x.n.type]}"><span class="muted">${x.t}</span> <b>${esc(x.n.label)}</b></span>`).join('')}</div>` : '<p class="muted">연결된 지식이 없습니다.</p>'; };
 const citeChip = (id, del) => `<span class="chip" style="border-color:${TYPE_COLOR.조문}"><b data-node="A:${esc(id)}" style="cursor:pointer">${esc(artLabel(id))}</b> <code>${esc(id)}</code>${del ? ` <a href="#" data-act="${del}" data-v="${esc(id)}" style="color:var(--red);text-decoration:none">✕</a>` : ''}</span>`;
 const citeSelect = (sid, exclude = []) => `<select id="${sid}"><option value="">+ 조문 연결</option>${Object.keys(K.조문).filter(x => !exclude.includes(x)).map(x => `<option value="${x}">${esc(artLabel(x))} (${x})</option>`).join('')}</select>`;
+const nbCard = (title, id, skip) => { const xs = neighbors(id).filter(x => !skip.includes(x.n.type)); return xs.length ? card(title, nbChips(id, skip)) : ''; };
 const card = (title, body) => `<div class="result" style="background:#fff">${title ? `<h3>${title}</h3>` : ''}${body}</div>`;
 
 function detailHtml() {
@@ -948,7 +950,7 @@ function ruleHtml(r) {
     <div style="margin-top:6px"><div class="row between"><b class="small">관련 해석·판단 (법령만으로 애매한 부분의 판단 근거)</b><button class="btn ghost sm" data-act="new-int" data-v="${r.id}">+ 해석·판단 연결</button></div>${intCards(intOf(r.id)) || '<p class="muted small">연결된 해석·판단이 없습니다.</p>'}</div>
   </div>
   ${edit ? `<div class="result hit" id="kxReview">${reviewHtml(r)}</div>` : ''}
-  ${card('연결된 지식', nbChips(r.id))}`;
+  ${nbCard('연결된 지식 (가이드·해석·문서)', r.id, ['조문'])}`;
 }
 function draftApproval(r) {
   return { notice: null, 규칙: r.id, 종류: '버전교체', 값: { 이름: ED.draft.이름, 설명: ED.draft.설명, 버전: ED.draft.버전 }, 시행일: ED.draft.시행일, 근거: null, 승인자: ED.draft.승인자, 일시: nowStr(), 의견: ED.draft.의견 || '지식 직접 편집' };
@@ -1003,7 +1005,7 @@ function qtyHtml() {
     <div class="scroll"><table><tr><th>물질</th><th>CAS</th><th>사업장</th><th class="num">하위 규정수량</th><th class="num">상위</th><th>사업장별 배수</th><th>개정 이력</th></tr>${rows}</table></div>
     ${edit ? `<div class="row" style="align-items:flex-end;margin-top:8px"><label class="field"><span>적용 시행일</span><input type="date" id="kxQtyDate" value="${ED.draft.시행일}"></label><label class="field"><span>작성자</span><select id="kxQtyBy">${personOpts('김지훈', 'HQ')}</select></label>
       <button class="btn green" data-act="qty-save">수정안 저장</button><button class="btn ghost" data-act="cancel">취소</button></div>` : ''}
-  </div>${card('연결된 지식', nbChips('QTY'))}`;
+  </div>${nbCard('연결된 지식', 'QTY', [])}`;
 }
 // ---- 가이드
 function guideHtml(g) {
@@ -1018,7 +1020,7 @@ function guideHtml(g) {
       <b>과거 사례</b><span>${(x.사례 || []).map((c, i) => `<div>${c.연도} · ${esc(c.시설)}: ${esc(c.내용)} ${edit ? `<a href="#" data-act="case-del" data-v="${i}" style="color:var(--red)">삭제</a>` : ''}</div>`).join('')}
         ${edit ? `<div class="row" style="margin-top:4px"><input type="number" id="kxCy" value="2026" style="width:70px"><input type="text" id="kxCf" placeholder="시설" style="width:120px"><input type="text" id="kxCc" placeholder="지적 내용" style="width:220px"><button class="btn ghost sm" data-act="case-add">사례 추가</button></div>` : ''}</span></div>
     ${edit ? `<div class="row"><button class="btn green" data-act="guide-save">저장</button><button class="btn ghost" data-act="cancel">취소</button></div>` : ''}
-  </div>${card('연결된 지식', nbChips('G:' + g.코드))}`;
+  </div>${nbCard('연결된 지식', 'G:' + g.코드, ['조문'])}`;
 }
 // ---- 조문
 function artHtml(id) {
@@ -1038,7 +1040,7 @@ function docHtml(t) {
     <b class="small">연결 조문</b><div class="chips">${links.map(c => c === 'QTY' ? `<span class="chip"><b data-node="QTY" style="cursor:pointer">수량기준 고시</b> <a href="#" data-act="dl-del" data-v="QTY" style="color:var(--red);text-decoration:none">✕</a></span>` : citeChip(c, 'dl-del')).join('')}
       ${citeSelect('kxNewCite', links)}<button class="btn ghost sm" data-act="dl-add">연결</button></div>
     <table style="margin-top:8px"><tr><th>사업장</th><th>문서 번호</th><th>개정</th><th>담당</th></tr>${SITES.map(s0 => { const d = s0.문서.find(x => x.유형 === t); return d ? `<tr><td>${sitePill(s0.id)}</td><td>${esc(d.번호)}</td><td class="small">${esc(d.개정)}</td><td>${esc(d.담당자)}</td></tr>` : ''; }).join('')}</table></div>
-    ${card('연결된 지식', nbChips('D:' + t))}`;
+    ${nbCard('연결된 지식', 'D:' + t, ['조문', '기준표'])}`;
 }
 function noticeKHtml(n) {
   return `<div class="result" style="background:#fff"><h3 style="margin:0 0 4px">${esc(n.제목)}</h3><p class="muted small">${esc(n.공포번호)} · 공포 ${n.공포일} · 시행 ${n.시행일}</p><p>${esc(n.요약)}</p>
@@ -1065,7 +1067,7 @@ function interpHtml(iid) {
       <b>적용 규칙</b><span><div class="chips" style="margin:0">${x.적용규칙.map(r => `<span class="chip"><b data-node="${r}" style="cursor:pointer">${r}</b>${edit ? ` <a href="#" data-act="irule-del" data-v="${r}" style="color:var(--red);text-decoration:none">✕</a>` : ''}</span>`).join('')}${edit ? ruleSel + '<button class="btn ghost sm" data-act="irule-add">연결</button>' : ''}</div></span>
       <b>적용 방법</b><span>${ta('적용방법')}</span></div>
     ${edit ? `<div class="row"><button class="btn green" data-act="int-save">저장</button><button class="btn ghost" data-act="cancel">취소</button></div>` : ''}
-  </div>${isNew ? '' : card('연결된 지식', nbChips('I:' + iid))}`;
+  </div>${isNew ? '' : nbCard('연결된 지식', 'I:' + iid, ['조문', '규칙'])}`;
 }
 function newRuleHtml() {
   return `<div class="result" style="background:#fff;border-color:var(--orange)"><h3>새 점검 규칙 추가 (체크리스트형)</h3>
@@ -1078,7 +1080,14 @@ function newRuleHtml() {
 
 // ---- 이벤트
 function setPath(o, path, val) { const ks = path.split('.'); let x = o; ks.slice(0, -1).forEach(k => { x = x[k]; }); x[ks[ks.length - 1]] = val; }
-function selectNode(id) { ED.sel = id; ED.mode = 'view'; ED.draft = null; ED.verView = null; renderKX(); }
+function selectNode(id) {
+  if (RV.view !== '관계도' && curTab === 't8') {
+    if (id.startsWith('A:')) { const aid = id.slice(2); if (SRCKEY(aid)) return openSource(aid); const a = (K.조문[aid] || [])[0]; return toast(a ? `${label(a)}: ${a.내용.slice(0, 120)}` : aid); }
+    if (id.startsWith('N:')) return openCmp(id.slice(2));
+    ED.mode = 'view'; ED.draft = null; ED.verView = null; ED.sel = id;
+    RV.sel = K.규칙.some(r => r.id === id) ? id : 'K|' + id; return renderReview();
+  }
+  ED.sel = id; ED.mode = 'view'; ED.draft = null; ED.verView = null; renderKX(); }
 function refreshDetail() { if ($('kxDetail')) $('kxDetail').innerHTML = detailHtml(); if ($('kxGraph')) $('kxGraph').innerHTML = graphSvg(); if ($('kxNav')) $('kxNav').innerHTML = navHtml(); }
 function bindKX() {
   const box = $('kx');
@@ -1099,7 +1108,6 @@ function bindKX() {
     if (actEl) { e.preventDefault(); return kxAct(actEl.dataset.act, actEl.dataset.v); }
     if (nodeEl && !e.target.closest('input,select,textarea')) { e.preventDefault(); const nid = nodeEl.dataset.node;
       if (RV.view === '관계도' && !nid.startsWith('A:') && !nid.startsWith('N:')) { ED.sel = nid; ED.mode = 'view'; ED.draft = null; RV.view = '목록'; RV.sel = K.규칙.some(r => r.id === nid) ? nid : 'K|' + nid; return renderReview(); }
-      if (RV.view === '목록' && e.target.closest('#rvDetail')) { ED.sel = nid; ED.mode = 'view'; ED.draft = null; RV.view = '관계도'; return renderReview(); }
       selectNode(nid); }
   };
 }
@@ -1734,7 +1742,7 @@ function renderReview() {
   renderObl();
   document.querySelectorAll('[data-rvview]').forEach(b => b.className = `btn sm ${b.dataset.rvview === RV.view ? '' : 'ghost'}`);
   $('rvTools').classList.toggle('hidden', RV.view === '관계도'); $('rvMain').classList.toggle('hidden', RV.view === '관계도'); $('kxHost').classList.toggle('hidden', RV.view !== '관계도');
-  if (RV.view !== '관계도') $('kxHost').innerHTML = '';
+  if (RV.view !== '관계도') $('kxHost').innerHTML = ''; else $('rvDetail').innerHTML = ''; // 같은 id(#kx)가 두 곳에 생기지 않도록
   if ($('rvGroup')) $('rvGroup').value = RV.group;
   const all = K.규칙.map(r => ({ r, rv: rvOf(r) }));
   const cnt = s0 => all.filter(x => x.rv.상태 === s0).length;
@@ -1835,7 +1843,7 @@ $('rvDetail') && ($('rvDetail').onchange = e => {
 $('rvDetail') && ($('rvDetail').onclick = e => {
   if (e.target.closest('#kx')) return;
   const go = e.target.closest('[data-rvgo]'); if (go) { ED.sel = go.dataset.rvgo; ED.mode = 'view'; ED.draft = null; RV.view = '관계도'; return renderReview(); }
-  const nd = e.target.closest('[data-node]'); if (nd) { e.preventDefault(); ED.sel = nd.dataset.node; ED.mode = 'view'; ED.draft = null; RV.view = '관계도'; return renderReview(); }
+  const nd = e.target.closest('[data-node]'); if (nd) { e.preventDefault(); return selectNode(nd.dataset.node); }
   const g4 = e.target.closest('[data-pgo4]'); if (g4) return openCmp(g4.dataset.pgo4);
   const dd = e.target.closest('[data-drdel]'); if (dd) { e.preventDefault(); const [t, id] = dd.dataset.drdel.split('|'); docRuleEdit(t, id, false); toast(`${docOf(t)?.이름} ↔ ${id} 연결 제외`); return renderReview(); }
   const ra = e.target.closest('[data-rdadd]'); if (ra) { const t = $('rdAdd').value; if (!t) return toast('연결할 문서를 고르세요'); docRuleEdit(t, ra.dataset.rdadd, true); return renderReview(); }
