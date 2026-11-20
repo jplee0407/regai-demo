@@ -127,7 +127,7 @@
     <h1>법규 개정 영향 진단 및 조치계획 자동 수립 · 시연</h1>
     <p id="buildinfo">화학물질관리법 · 시행규칙 발췌 기반 · 가상 사업장 데이터</p>
   </div>
-  <div class="who">로그인: 김지훈 (환경안전팀장) · 가상 계정<br><a href="#" id="resetBtn" style="color:#C9D7EC">시연 데이터 초기화</a></div>
+  <div class="who">로그인: 김지훈 (본사 환경안전팀장) · 가상 계정<br><a href="#" id="resetBtn" style="color:#C9D7EC">시연 데이터 초기화</a></div>
 </header>
 <div class="wrap">
   <div class="bar">
@@ -140,13 +140,13 @@
       <button data-t="t6">⑥ 지식 기반·판정</button>
       <button data-t="t7">⑦ GitHub 반영 흐름</button>
     </div>
-    <label class="date">기준일 <input type="date" id="baseDate"></label>
+    <div class="row"><label class="date">사업장 <select id="siteSel"></select></label><label class="date">기준일 <input type="date" id="baseDate"></label></div>
   </div>
   <div class="note">시연용입니다. 고시·개정 내용과 사업장·물질·수치는 모두 가상이며, 조문은 발췌·요약본입니다. 법정 의무 판정은 AI가 아니라 전문가가 승인한 규칙으로 수행하고, AI는 영향 목록·문서 수정안·규칙 변경안을 제안합니다. 입력한 내용은 이 브라우저에만 저장됩니다.</div>
 
   <!-- ① 사업장 현황 -->
   <section id="t1">
-    <div class="grid6" id="siteKpi"></div>
+    <div class="grid3" id="siteKpi"></div>
     <div class="grid3" style="margin-top:14px">
       <div class="card"><h2>사업장 기본정보</h2><div class="kv" id="siteBasic"></div></div>
       <div class="card"><h2>유해화학물질 영업허가</h2><div class="scroll"><table id="permitTable"></table></div></div>
@@ -215,6 +215,7 @@
   <!-- ⑤ 대시보드 -->
   <section id="t5" class="hidden">
     <div class="grid6" id="dashKpi"></div>
+    <div class="card" style="margin-top:14px"><h2>사업장별 · 고시별 진행현황</h2><p class="desc">같은 고시라도 사업장마다 영향 범위와 진행 속도가 다릅니다. 지식(규칙) 반영은 본사에서 한 번 하면 전 사업장에 적용됩니다.</p><div class="scroll"><table id="matrixTable"></table></div></div>
     <h3 style="color:var(--navy);margin:18px 0 8px">고시별 진행현황</h3>
     <div class="grid3" id="dashCards"></div>
     <div class="grid2" style="grid-template-columns:1fr 1fr;margin-top:14px">

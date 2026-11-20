@@ -4,13 +4,21 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const clone = o => JSON.parse(JSON.stringify(o));
 const B = await (await fetch('data/bundle.json', { cache: 'no-store' })).json();
-const SITE = B.사업장;
+const SITES = B.사업장목록;
+const HQ = B.본사;
+const SITE0 = B.사업장; // 정답셋(회귀 테스트) 기준 사업장
 const NOTICES = B.고시 || [];
-const PEOPLE = SITE.담당자;
+const PEOPLE = [...SITES.flatMap(s => s.담당자.map(p => ({ ...p, 사업장: s.id }))), ...HQ.담당자.map(p => ({ ...p, 사업장: 'HQ' }))];
+const siteName = id => id === 'HQ' ? '본사 공통' : SITES.find(s => s.id === id)?.사업장 || id;
+const siteShort = id => id === 'HQ' ? '본사' : SITES.find(s => s.id === id)?.약칭 || id;
+let curSite = 'ALL';
+const selSites = () => curSite === 'ALL' ? SITES : SITES.filter(s => s.id === curSite);
+const inSite = x => curSite === 'ALL' || x.사업장 === curSite || x.사업장 === 'HQ';
+const sitePill = id => `<span class="pill ${id === 'HQ' ? 'gray' : 'navy'}" style="font-size:10.5px">${esc(siteShort(id))}</span>`;
 const ST = ['대기', '진행 중', '완료'];
 
 // ---------------------------------------------------------------- 상태 저장 (브라우저 localStorage)
-const KEY = 'regai-demo-v2';
+const KEY = 'regai-demo-v4';
 const nowStr = () => new Date().toLocaleString('sv-SE').slice(0, 16);
 let S;
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* 저장 불가 환경 */ } }
@@ -24,8 +32,8 @@ const base = () => $('baseDate').value || today;
 const repo = B.빌드.저장소;
 $('buildinfo').textContent = `화학물질관리법·시행규칙 발췌 기반 · 가상 사업장 · 빌드 ${B.빌드.커밋} (${B.빌드.시각.slice(0, 16).replace('T', ' ')} UTC)`;
 const dday = d => { const n = daysBetween(base(), d); return n === 0 ? 'D-day' : n > 0 ? `D-${n}` : `D+${-n}`; };
-const personOpts = sel => PEOPLE.map(p => `<option value="${esc(p.이름)}" ${p.이름 === sel ? 'selected' : ''}>${esc(p.이름)} (${esc(p.부서)})</option>`).join('');
-const pickPerson = 부서 => (PEOPLE.find(p => p.부서 === 부서 && p.직책 !== '팀장') || PEOPLE.find(p => p.부서 === 부서) || PEOPLE[0]).이름;
+const personOpts = (sel, site) => PEOPLE.filter(p => !site || p.사업장 === site || p.사업장 === 'HQ').map(p => `<option value="${esc(p.이름)}" ${p.이름 === sel ? 'selected' : ''}>${esc(p.이름)} (${esc(p.부서)})</option>`).join('');
+const pickPerson = (부서, site) => { const ps = site.담당자; return (ps.find(p => p.부서 === 부서) || ps.find(p => p.부서 === '환경안전팀') || ps[0]).이름; };
 const shash = s => { let h = 2166136261; for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; } return h.toString(16).padStart(8, '0') + '····'; };
 
 // ---------------------------------------------------------------- 지식 = 저장소 지식 + 전문가 승인 내역
@@ -77,7 +85,7 @@ function mocDue(m, date) {
 }
 function mocFlags(m) {
   const t = m.변경유형;
-  return { 취급시설_용량_증가: t.includes('용량'), 함량_농도_성상_변경: t.includes('함량'), 위험도_증가: t.includes('위험 증가'), 시설_위치_변경: t.includes('위치') };
+  return { 물질_변경_추가: t.includes('물질 변경'), 취급시설_용량_증가: t.includes('용량'), 함량_농도_성상_변경: t.includes('함량'), 위험도_증가: t.includes('위험 증가'), 시설_위치_변경: t.includes('위치') };
 }
 
 // ---------------------------------------------------------------- AI 영향 분석 (시연: 미리 만든 AI 결과 + 사업장 데이터 대조)
@@ -87,49 +95,66 @@ function analyze(n) {
   const due = (spec, v = {}) => spec.기준 === '시행일' ? addDays(n.시행일, spec.일수) : addDays(v[spec.기준] || n.시행일, spec.일수);
   const changedCAS = (n.수량변경 || []).map(q => q.CAS);
   const prop = (n.규칙제안 || []).find(p => p.종류 === '기한일수');
-  for (const r of n.영향규칙 || []) {
-    let ents = [];
-    if (r.대상 === '변경관리') {
-      ents = SITE.변경관리.filter(m => m.상태 === '진행' && m.계획서_제출예정).map(m => ({
-        구분: '설비 변경', 대상: `${m.id} ${m.이름}`, 담당자: m.담당자,
-        v: { ...m, 기존기한: m.계획서_제출예정, 신기한: addDays(m.변경완료_예정일, prop ? prop.제안 : -60) },
-      }));
-    } else if (r.대상 === '물질') {
-      ents = SITE.물질.filter(m => r.조건.전체 || (r.조건.수량변경 && changedCAS.includes(m.CAS))).map(m => {
-        const q = (n.수량변경 || []).find(x => x.CAS === m.CAS) || {};
-        return { 구분: '물질', 대상: `${m.이름} (CAS ${m.CAS})`, 담당자: pickPerson(r.부서),
-          v: { ...m, 보유량: m.최대보유량_t, ...q, 배수_구: q.하위_구 ? (m.최대보유량_t / q.하위_구).toFixed(1) : '', 배수_신: q.하위_신 ? (m.최대보유량_t / q.하위_신).toFixed(1) : '' } };
-      });
-    } else if (r.대상 === '시설') {
-      ents = SITE.시설.filter(f => (r.조건.유형 && r.조건.유형.includes(f.유형))
-        || (r.조건.물질수량변경 && f.물질.some(id => changedCAS.includes(SITE.물질.find(m => m.id === id)?.CAS)))
-        || (r.조건.연장후보 && f.연속적합_횟수 >= 2))
-        .map(f => ({ 구분: '시설', 대상: f.이름, 담당자: f.담당자, v: f }));
-    } else {
-      ents = [{ 구분: r.대상 === '교육' ? '교육' : '신고·제출', 대상: r.대상명, 담당자: pickPerson(r.부서), v: {} }];
-    }
-    for (const e of ents) items.push({ 구분: e.구분, 대상: e.대상, 영향: fill(r.영향, e.v), 조치: r.조치, 담당자: e.담당자, 기한: due(r.기한, e.v), 신뢰도: r.신뢰도, 근거: n.변경조문.map(c => c.조문) });
-  }
-  // 문서: 관련 조문이 바뀐 조문과 연결된 사내 문서
   const ids = n.변경조문.map(c => c.id);
-  for (const d of SITE.문서) {
-    const hit = d.관련조문.some(x => ids.some(id => id === x || id.startsWith(x + '-')));
-    if (!hit) continue;
-    const recs = (n.문서수정 || []).filter(x => x.문서 === d.id).map(x => ({ ...x, 채택: null, 최종: x.수정안 }));
-    items.push({ 구분: '문서', 대상: `${d.이름} (${d.번호})`, 문서: d.id, 담당자: d.담당자, 기한: addDays(n.시행일, -30), 신뢰도: recs.length ? 0.9 : 0.62,
-      영향: recs.length ? `개정 조문을 인용하는 문서 — 수정 위치 ${recs.length}곳 식별, 수정 문구 제안` : '관련 조문이 연결된 문서 — 수정 필요 여부 검토',
-      조치: recs.length ? '수정안 검토·채택 후 문서 개정' : '문서 검토 (변경 불필요 시 확인 기록)', 수정안: recs, 근거: n.변경조문.map(c => c.조문) });
+  const cites = n.변경조문.map(c => c.조문);
+  for (const site of SITES) {
+    const push = x => items.push({ 사업장: site.id, 근거: cites, ...x });
+    for (const r of n.영향규칙 || []) {
+      let ents = [];
+      if (r.대상 === '변경관리') {
+        ents = site.변경관리.filter(m => m.상태 === '진행' && m.계획서_제출예정).map(m => ({
+          구분: '설비 변경', 대상: `${m.id} ${m.이름}`, 담당자: m.담당자,
+          v: { ...m, 기존기한: m.계획서_제출예정, 신기한: addDays(m.변경완료_예정일, prop ? prop.제안 : -60) },
+        }));
+      } else if (r.대상 === '물질' && r.조건.집계) {
+        const ms = site.물질;
+        if (ms.length) ents = [{ 구분: '물질', 대상: `${site.약칭} 취급 유해화학물질 ${ms.length}종`, 담당자: pickPerson(r.부서, site), v: { 물질수: ms.length, 물질목록: ms.map(m => m.이름).join(', ') } }];
+      } else if (r.대상 === '물질') {
+        ents = site.물질.filter(m => r.조건.전체 || (r.조건.수량변경 && changedCAS.includes(m.CAS))).map(m => {
+          const q = (n.수량변경 || []).find(x => x.CAS === m.CAS) || {};
+          return { 구분: '물질', 대상: `${m.이름} (CAS ${m.CAS})`, 담당자: pickPerson(r.부서, site),
+            v: { ...m, 보유량: m.최대보유량_t, ...q, 배수_구: q.하위_구 ? (m.최대보유량_t / q.하위_구).toFixed(1) : '', 배수_신: q.하위_신 ? (m.최대보유량_t / q.하위_신).toFixed(1) : '' } };
+        });
+      } else if (r.대상 === '시설') {
+        ents = site.시설.filter(f => (r.조건.유형 && r.조건.유형.includes(f.유형))
+          || (r.조건.물질수량변경 && f.물질.some(id => changedCAS.includes(site.물질.find(m => m.id === id)?.CAS)))
+          || (r.조건.연장후보 && f.연속적합_횟수 >= 2))
+          .map(f => ({ 구분: '시설', 대상: f.이름, 담당자: f.담당자, v: f }));
+      } else {
+        // 교육·신고: 이 고시가 사업장에 실제 영향을 줄 때만 (수량기준 고시는 해당 물질이 있는 사업장만)
+        if (changedCAS.length && !site.물질.some(m => changedCAS.includes(m.CAS))) continue;
+        if (r.대상 === '교육' && n.영향규칙.some(x => x.대상 === '변경관리') && !site.변경관리.some(m => m.상태 === '진행' && m.계획서_제출예정)) continue;
+        ents = [{ 구분: r.대상 === '교육' ? '교육' : '신고·제출', 대상: `${site.약칭} ${r.대상명}`, 담당자: pickPerson(r.부서, site), v: {} }];
+      }
+      for (const e of ents) push({ 구분: e.구분, 대상: e.대상, 영향: fill(r.영향, e.v), 조치: r.조치, 담당자: e.담당자, 기한: due(r.기한, e.v), 신뢰도: r.신뢰도 });
+    }
+    // 문서: 관련 조문이 바뀐 조문과 연결된 사업장 문서 (수량기준 고시는 해당 물질이 있는 사업장만)
+    if (changedCAS.length && !site.물질.some(m => changedCAS.includes(m.CAS))) continue;
+    const aff = site.물질.filter(m => changedCAS.includes(m.CAS)).map(m => ({ m, q: n.수량변경.find(x => x.CAS === m.CAS) }));
+    const dv = { 사업장: site.사업장,
+      수량표_구: aff.map(({ m, q }) => `${m.이름} 하위 ${q.하위_구} t (배수 ${(m.최대보유량_t / q.하위_구).toFixed(1)})`).join(' / '),
+      수량표_신: aff.map(({ m, q }) => `${m.이름} 하위 ${q.하위_신} t (배수 ${(m.최대보유량_t / q.하위_신).toFixed(1)})`).join(' / '),
+      규정수량_구: aff.map(({ m, q }) => `${m.이름} … 하위 규정수량 ${q.하위_구} 톤`).join(' / '),
+      규정수량_신: aff.map(({ m, q }) => `${m.이름} … 하위 규정수량 ${q.하위_신} 톤`).join(' / ') };
+    for (const d of site.문서) {
+      const hit = d.관련조문.some(x => ids.some(id => id === x || id.startsWith(x + '-')));
+      if (!hit) continue;
+      const recs = (n.문서수정 || []).filter(x => x.문서 === d.유형).map(x => ({ ...x, 현행: fill(x.현행, dv), 수정안: fill(x.수정안, dv), 채택: null })).map(x => ({ ...x, 최종: x.수정안 }));
+      push({ 구분: '문서', 대상: `${d.이름} (${d.번호})`, 문서: d.id, 담당자: d.담당자, 기한: addDays(n.시행일, -30), 신뢰도: recs.length ? 0.9 : 0.62,
+        영향: recs.length ? `개정 조문을 인용하는 문서 — 수정 위치 ${recs.length}곳 식별, 수정 문구 제안` : '관련 조문이 연결된 문서 — 수정 필요 여부 검토',
+        조치: recs.length ? '수정안 검토·채택 후 문서 개정' : '문서 검토 (변경 불필요 시 확인 기록)', 수정안: recs });
+    }
   }
-  // 지식: 규칙 수정과 지적·조치 가이드
+  // 전사 지식: 규칙 수정과 지적·조치 가이드 (본사 관리)
   const seen = new Set();
   for (const p of n.규칙제안 || []) {
     if (seen.has(p.규칙)) continue; seen.add(p.규칙);
     const rule = B.규칙.find(r => r.id === p.규칙);
-    items.push({ 구분: '지식(규칙)', 대상: rule ? `판정 규칙 ${rule.id} ${rule.이름}` : '물질별 규정수량 표', 담당자: '김지훈', 기한: addDays(n.시행일, -21), 신뢰도: 0.95,
-      영향: p.종류 === '확인' ? '판정 값 변경 없음 — 근거 문구 확인' : `${p.항목}: ${p.현행} → ${p.제안}`, 조치: '④ 신·구 비교 화면에서 전문가 확인·승인', 근거: [p.근거], 규칙키: p.규칙 });
+    items.push({ 사업장: 'HQ', 구분: '지식(규칙)', 대상: rule ? `판정 규칙 ${rule.id} ${rule.이름}` : '물질별 규정수량 표', 담당자: '김지훈', 기한: addDays(n.시행일, -21), 신뢰도: 0.95,
+      영향: p.종류 === '확인' ? '판정 값 변경 없음 — 근거 문구 확인' : `${p.항목}: ${p.현행} → ${p.제안} (전 사업장 공통 적용)`, 조치: '④ 신·구 비교 화면에서 전문가 확인·승인', 근거: [p.근거], 규칙키: p.규칙 });
   }
   for (const g of impact(B, ids).가이드) {
-    items.push({ 구분: '지식(가이드)', 대상: `지적·조치 가이드 ${g.코드} ${g.지적유형}`, 담당자: '이수진', 기한: addDays(n.시행일, -21), 신뢰도: 0.82,
+    items.push({ 사업장: 'HQ', 구분: '지식(가이드)', 대상: `지적·조치 가이드 ${g.코드} ${g.지적유형}`, 담당자: '문소희', 기한: addDays(n.시행일, -21), 신뢰도: 0.82,
       영향: '권고 조치 문구에 개정 전 기준이 들어 있을 수 있음', 조치: '권고 조치 문구 갱신', 근거: ids });
   }
   return items.map((x, i) => ({ id: `${n.id}-${String(i + 1).padStart(2, '0')}`, 출처: 'AI', 상태: '대기', 판단: '확인 전', ...x }));
@@ -137,7 +162,7 @@ function analyze(n) {
 
 // ---------------------------------------------------------------- 초기 상태 (시연용: 일부 고시는 이미 진행 중)
 function seed() {
-  S = { v: 3, notices: {}, approvals: [], prop: {}, log: [], checked: null };
+  S = { v: 4, notices: {}, approvals: [], prop: {}, log: [], checked: null };
   for (const n of NOTICES.filter(n => n.초기상태)) {
     const st = n.초기상태;
     (n.규칙제안 || []).forEach((p, i) => { if (!st.규칙승인) return; S.prop[`${n.id}:${i}`] = '승인'; S.approvals.push({ notice: n.id, idx: i, 규칙: p.규칙, 종류: p.종류, 값: p.제안, CAS: p.CAS, 시행일: p.시행일, 근거: p.근거, 승인자: st.승인자, 일시: st.분석일 + ' 15:00', 의견: '개정 조문과 일치 확인' }); });
@@ -148,10 +173,11 @@ function seed() {
     const tasks = analyze(n);
     tasks.forEach((t, i) => {
       t.판단 = '조치 대상'; t.판단자 = st.승인자.split(' ')[0];
-      const na = (st.비대상 || []).find(x => x.i === i);
+      const na = (st.비대상 || []).find(x => x.사업장 === t.사업장 && t.대상.includes(x.포함));
       if (na) { t.판단 = '비대상'; t.판단사유 = na.사유; return; }
-      if (st.완료 === 'all' || (st.완료 || []).includes(i)) t.상태 = '완료';
-      else if ((st.진행 || []).includes(i)) t.상태 = '진행 중';
+      const k = (i * 7) % 10;
+      if (st.완료 === 'all' || k < (st.완료비율 || 0) * 10) t.상태 = '완료';
+      else if (k < ((st.완료비율 || 0) + (st.진행비율 || 0)) * 10) t.상태 = '진행 중';
       if (t.규칙키 && st.규칙승인) t.상태 = '완료';
       if (t.상태 === '완료' && t.수정안) t.수정안.forEach(r => { r.채택 = '채택'; });
     });
@@ -163,7 +189,7 @@ function seed() {
   save();
 }
 try { S = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { S = null; }
-if (!S || S.v !== 3) seed();
+if (!S || S.v !== 4) seed();
 K = knowledge();
 
 function nstate(n) {
@@ -213,40 +239,54 @@ const cmpBox = (a, b, h1 = '현행', h2 = '개정') => { const d = diffHtml(a, b
 
 // ================================================================ ① 사업장 현황
 function renderSite() {
-  const insp = inspectionSchedule(K, SITE, base());
-  const near = insp.filter(r => r.상태 !== '정상').length;
-  const acc = SITE.물질.filter(m => m.구분.includes('사고대비')).length;
-  const mocs = SITE.변경관리.filter(m => m.상태 === '진행');
-  $('siteKpi').innerHTML = [
-    [SITE.사업장군, '사업장 군 (정기검사 주기 기준)'], [SITE.물질.length + '종', `취급 유해화학물질 (사고대비 ${acc}종)`], [SITE.시설.length + '개', '취급시설'],
-    [near + '개', '정기검사 임박·경과', near > 0], [mocs.length + '건', '진행 중 변경관리'], [SITE.문서.length + '건', '관리 문서 (조문 연결)'],
-  ].map(([v, l, a]) => `<div class="kpi ${a ? 'alert' : ''}"><div class="v">${esc(v)}</div><div class="l">${esc(l)}</div></div>`).join('');
-  const bi = SITE.기본정보;
-  $('siteBasic').innerHTML = [['회사', bi.회사], ['사업장', SITE.사업장], ['업종', bi.업종], ['소재지', bi.소재지], ['종업원', bi.종업원], ['유해화학물질관리자', bi.유해화학물질관리자], ['취급자 교육', bi.취급자_교육_이수율]]
-    .map(([k, v]) => `<b>${k}</b><span>${esc(v)}</span>`).join('');
-  $('permitTable').innerHTML = `<tr><th>허가 종류</th><th>허가번호</th><th>최근 변경</th></tr>` + SITE.영업허가.map(p => `<tr><td>${esc(p.종류)}</td><td class="small">${esc(p.번호)}</td><td>${p.최근변경}</td></tr>`).join('');
-  const pl = SITE.계획서;
-  $('planInfo').innerHTML = [['최초 제출', pl.최초제출], ['최근 변경 제출', pl.최근변경제출], ['이행점검', pl.이행점검], ['결과', pl.결과], ['총괄영향범위', pl.총괄영향범위]].map(([k, v]) => `<b>${k}</b><span>${esc(v)}</span>`).join('');
-  $('chemTable').innerHTML = `<tr><th>물질</th><th>CAS</th><th>UN</th><th>구분</th><th class="num">최대 보유량</th><th class="num">하위 규정수량</th><th class="num">배수</th><th class="num">상위 규정수량</th><th>취급시설</th><th>MSDS 개정</th></tr>` +
-    SITE.물질.map(m => {
+  const st = x => x === '기한 경과' ? 'red' : x === '임박' ? 'orange' : 'green';
+  const INSP = Object.fromEntries(SITES.map(site => [site.id, inspectionSchedule(K, site, base())]));
+  // 사업장 카드 (클릭하면 해당 사업장만 보기)
+  $('siteKpi').innerHTML = SITES.map(site => {
+    const near = INSP[site.id].filter(r => r.상태 !== '정상').length;
+    const acc = site.물질.filter(m => m.구분.includes('사고대비')).length;
+    const mocs = site.변경관리.filter(m => m.상태 === '진행').length;
+    const on = curSite === site.id;
+    return `<div class="ncard" data-site="${site.id}" style="${on ? 'border-color:var(--blue);box-shadow:0 0 0 2px var(--lblue)' : ''}">
+      <div class="row between"><b style="font-size:16px;color:var(--navy)">${esc(site.사업장)}</b><span class="pill line">${site.사업장군}</span></div>
+      <div class="muted" style="margin:2px 0 10px">${esc(site.기본정보.업종)} · ${esc(site.기본정보.종업원)}</div>
+      <div class="grid4" style="gap:6px">
+        <div><div style="font-size:19px;font-weight:800;color:var(--navy)">${site.물질.length}</div><div class="muted small">유해화학물질 (사고대비 ${acc})</div></div>
+        <div><div style="font-size:19px;font-weight:800;color:var(--navy)">${site.시설.length}</div><div class="muted small">취급시설</div></div>
+        <div><div style="font-size:19px;font-weight:800;color:${near ? 'var(--red)' : 'var(--navy)'}">${near}</div><div class="muted small">검사 임박·경과</div></div>
+        <div><div style="font-size:19px;font-weight:800;color:var(--navy)">${mocs}</div><div class="muted small">진행 중 변경</div></div>
+      </div></div>`;
+  }).join('');
+  const ss = selSites(), multi = ss.length > 1;
+  const sc = id => multi ? `<td>${sitePill(id)}</td>` : '';
+  const sh = multi ? '<th>사업장</th>' : '';
+  $('siteBasic').innerHTML = ss.map(site => { const bi = site.기본정보; return (multi ? `<b style="grid-column:1/3;color:var(--navy);margin-top:6px">${esc(site.사업장)}</b>` : '') +
+    [['회사', bi.회사], ['사업장', site.사업장], ['업종', bi.업종], ['소재지', bi.소재지], ['종업원', bi.종업원], ['사업장 군', site.사업장군], ['유해화학물질관리자', bi.유해화학물질관리자], ['취급자 교육', bi.취급자_교육_이수율]]
+      .filter(([k]) => !multi || !['회사', '사업장'].includes(k)).map(([k, v]) => `<b>${k}</b><span>${esc(v)}</span>`).join(''); }).join('');
+  $('permitTable').innerHTML = `<tr>${sh}<th>허가 종류</th><th>허가번호</th><th>최근 변경</th></tr>` + ss.flatMap(site => site.영업허가.map(p => `<tr>${sc(site.id)}<td>${esc(p.종류)}</td><td class="small">${esc(p.번호)}</td><td>${p.최근변경}</td></tr>`)).join('');
+  $('planInfo').innerHTML = ss.map(site => { const pl = site.계획서; return (multi ? `<b style="grid-column:1/3;color:var(--navy);margin-top:6px">${esc(site.사업장)}</b>` : '') +
+    [['최초 제출', pl.최초제출], ['최근 변경 제출', pl.최근변경제출], ['이행점검', pl.이행점검], ['결과', pl.결과], ['총괄영향범위', pl.총괄영향범위]].map(([k, v]) => `<b>${k}</b><span>${esc(v)}</span>`).join(''); }).join('');
+  $('chemTable').innerHTML = `<tr>${sh}<th>물질</th><th>CAS</th><th>UN</th><th>구분</th><th class="num">최대 보유량</th><th class="num">하위 규정수량</th><th class="num">배수</th><th class="num">상위 규정수량</th><th>취급시설</th><th>MSDS 개정</th></tr>` +
+    ss.flatMap(site => site.물질.map(m => {
       const q = qtyAt(m, base());
       const mul = m.최대보유량_t / q.하위;
-      return `<tr><td><b>${esc(m.이름)}</b></td><td>${m.CAS}</td><td>${m.UN}</td><td class="small">${esc(m.구분)}</td><td class="num">${m.최대보유량_t} t</td>
+      return `<tr>${sc(site.id)}<td><b>${esc(m.이름)}</b></td><td>${m.CAS}</td><td>${m.UN}</td><td class="small">${esc(m.구분)}</td><td class="num">${m.최대보유량_t} t</td>
         <td class="num">${q.하위} t${q.예정 ? `<br><span class="pill orange">${q.예정.시행일}부터 ${q.예정.하위} t</span>` : ''}</td>
         <td class="num"><b>${mul.toFixed(1)}</b>${q.예정 ? `<br><span class="muted">→ ${(m.최대보유량_t / q.예정.하위).toFixed(1)}</span>` : ''}</td><td class="num">${q.상위} t</td><td>${m.시설.join(', ')}</td><td>${m.MSDS개정}</td></tr>`;
-    }).join('');
+    })).join('');
   const r242 = activeVersion(K.규칙.find(r => r.id === 'R-24-2'), base());
-  $('facDesc').textContent = `다음 검사 기한은 규칙 R-24-2 v${r242.버전}(${SITE.사업장군} 결정표)으로 기준일 ${base()}에 계산`;
-  const st = s => s === '기한 경과' ? 'red' : s === '임박' ? 'orange' : 'green';
-  $('facTable').innerHTML = `<tr><th>시설</th><th>유형</th><th>취급 물질</th><th>용량</th><th>위험도</th><th>방류벽</th><th>누출감지</th><th>최근 검사</th><th>주기</th><th>다음 기한</th><th>상태</th><th>담당</th></tr>` +
-    SITE.시설.map((f, i) => { const r = insp[i]; return `<tr><td><b>${esc(f.이름)}</b></td><td>${esc(f.유형)}</td><td class="small">${f.물질.map(id => esc(SITE.물질.find(m => m.id === id)?.이름)).join(', ')}</td><td>${esc(f.용량)}</td><td>${f.위험도}</td><td class="small">${esc(f.방류벽)}</td><td>${esc(f.누출감지)}</td><td>${f.최근_검사일}</td><td>${r.주기_년}년${r.연장_년 ? ` +${r.연장_년}` : ''}</td><td><b>${r.기한}</b> <span class="muted">${dday(r.기한)}</span></td><td><span class="pill ${st(r.상태)}">${r.상태}</span></td><td>${esc(f.담당자)}</td></tr>`; }).join('');
-  $('mocTable').innerHTML = `<tr><th>변경 건</th><th>변경 유형</th><th>완료 예정</th><th>계획서 제출 기한</th><th>상태</th></tr>` +
-    SITE.변경관리.map(m => { const d = m.상태 === '진행' ? mocDue(m, base()) : null; const chg = d && m.계획서_제출예정 && d !== m.계획서_제출예정;
-      return `<tr><td><b>${m.id}</b><br>${esc(m.이름)}<div class="muted">${esc(m.담당자)}</div></td><td class="small">${esc(m.변경유형)}</td><td>${m.변경완료_예정일}</td>
-      <td>${d ? `<b>${d}</b> <span class="small" style="${d < base() ? 'color:var(--red);font-weight:700' : 'color:var(--sub)'}">${dday(d)}</span>${chg ? `<br><span class="pill red">기존 계획 ${m.계획서_제출예정}</span>` : ''}` : '-'}</td><td>${m.상태 === '진행' ? '<span class="pill orange">진행</span>' : '<span class="pill gray">완료</span>'}</td></tr>`; }).join('');
-  $('docTable').innerHTML = `<tr><th>문서</th><th>개정</th><th>담당</th><th>연결 조문</th></tr>` +
-    SITE.문서.map(d => `<tr><td><b>${esc(d.이름)}</b><div class="muted">${d.번호}</div></td><td class="small">${esc(d.개정)}</td><td style="white-space:nowrap">${esc(d.담당자)}</td><td class="small">${d.관련조문.map(x => x === 'QTY' ? '수량기준 고시' : x).join(', ')}</td></tr>`).join('');
+  $('facDesc').textContent = `다음 검사 기한은 규칙 R-24-2 v${r242.버전}(사업장 군별 결정표)으로 기준일 ${base()}에 계산 — ${ss.map(x => `${x.약칭} ${x.사업장군}`).join(' · ')}`;
+  $('facTable').innerHTML = `<tr>${sh}<th>시설</th><th>유형</th><th>취급 물질</th><th>용량</th><th>위험도</th><th>방류벽</th><th>누출감지</th><th>최근 검사</th><th>주기</th><th>다음 기한</th><th>상태</th><th>담당</th></tr>` +
+    ss.flatMap(site => site.시설.map((f, i) => { const r = INSP[site.id][i]; return `<tr>${sc(site.id)}<td><b>${esc(f.이름)}</b></td><td>${esc(f.유형)}</td><td class="small">${f.물질.map(id => esc(site.물질.find(m => m.id === id)?.이름)).join(', ')}</td><td>${esc(f.용량)}</td><td>${f.위험도}</td><td class="small">${esc(f.방류벽)}</td><td>${esc(f.누출감지)}</td><td>${f.최근_검사일}</td><td>${r.주기_년}년${r.연장_년 ? ` +${r.연장_년}` : ''}</td><td><b>${r.기한}</b> <span class="muted">${dday(r.기한)}</span></td><td><span class="pill ${st(r.상태)}">${r.상태}</span></td><td>${esc(f.담당자)}</td></tr>`; })).join('');
+  $('mocTable').innerHTML = `<tr>${sh}<th>변경 건</th><th>변경 유형</th><th>완료 예정</th><th>계획서 제출 기한</th><th>상태</th></tr>` +
+    ss.flatMap(site => site.변경관리.map(m => { const d = m.상태 === '진행' ? mocDue(m, base()) : null; const chg = d && m.계획서_제출예정 && d !== m.계획서_제출예정;
+      return `<tr>${sc(site.id)}<td><b>${m.id}</b><br>${esc(m.이름)}<div class="muted">${esc(m.담당자)}</div></td><td class="small">${esc(m.변경유형)}</td><td>${m.변경완료_예정일}</td>
+      <td>${d ? `<b>${d}</b> <span class="small" style="${d < base() ? 'color:var(--red);font-weight:700' : 'color:var(--sub)'}">${dday(d)}</span>${chg ? `<br><span class="pill red">기존 계획 ${m.계획서_제출예정}</span>` : ''}` : '-'}</td><td>${m.상태 === '진행' ? '<span class="pill orange">진행</span>' : '<span class="pill gray">완료</span>'}</td></tr>`; })).join('');
+  $('docTable').innerHTML = `<tr>${sh}<th>문서</th><th>개정</th><th>담당</th><th>연결 조문</th></tr>` +
+    ss.flatMap(site => site.문서.map(d => `<tr>${sc(site.id)}<td><b>${esc(d.이름)}</b><div class="muted">${d.번호}</div></td><td class="small">${esc(d.개정)}</td><td style="white-space:nowrap">${esc(d.담당자)}</td><td class="small">${d.관련조문.map(x => x === 'QTY' ? '수량기준 고시' : x).join(', ')}</td></tr>`)).join('');
 }
+$('siteKpi').onclick = e => { const c = e.target.closest('[data-site]'); if (!c) return; setSite(curSite === c.dataset.site ? 'ALL' : c.dataset.site); };
+function setSite(id) { curSite = id; $('siteSel').value = id; render(); }
 
 // ================================================================ ② 모니터링
 const SOURCES = [['법제처 현행법령 (화학물질관리법·시행령·시행규칙)', 'Open API'], ['국가법령정보센터 행정규칙 (화학물질안전원·환경부 고시)', 'Open API'], ['입법예고 (국민참여입법센터)', '목록 수집'], ['화학물질안전원 공지사항', '목록 수집']];
@@ -261,6 +301,7 @@ function renderMonitor() {
       <h3 style="margin:8px 0 4px">${esc(n.제목)}</h3>
       <p class="muted" style="margin:0 0 8px">${esc(n.요약)}</p>
       <div class="row between"><div class="row small"><span>공포 <b>${n.공포일}</b></span><span>시행 <b>${n.시행일}</b> <span class="muted">(${dday(n.시행일)})</span></span><span>바뀐 조문 <b>${n.변경조문.length}</b>건</span>${s ? `<span>조치 <b>${done}/${s.tasks.length}</b> 완료</span>` : ''}</div>
+      ${s ? `<div class="chips" style="margin:6px 0 0">${SITES.map(x => { const c = s.tasks.filter(t => t.사업장 === x.id).length; return `<span class="chip">${esc(x.약칭)} <b>${c ? c + '건' : '영향 없음'}</b></span>`; }).join('')}</div>` : ''}
       <div class="row"><button class="btn ghost sm" data-cmp="${n.id}">신·구 비교</button><button class="btn ${s ? 'blue' : 'orange'} sm" data-ana="${n.id}">${s ? '조치 목록 보기' : '우리 사업장 영향도 분석'}</button></div></div></div>`;
   }).join('');
   const nnew = NOTICES.filter(n => nstate(n) === '신규').length;
@@ -287,8 +328,10 @@ function noticeHead(n) {
   return `<div class="row" style="gap:6px">${stPill(nstate(n))}<span class="pill line">${esc(n.구분)}</span><b style="color:var(--navy)">${esc(n.제목)}</b></div>
     <div class="row small muted" style="margin-top:6px"><span>${esc(n.공포번호)}</span><span>공포 ${n.공포일}</span><span>시행 <b style="color:var(--text)">${n.시행일}</b> (${dday(n.시행일)})</span><span>${esc(n.요약)}</span></div>`;
 }
-const STEPS = n => [`바뀐 조문 ${n.변경조문.length}건 읽기 · 변경 요지 추출`, `사업장 데이터와 대조 (물질 ${SITE.물질.length}종 · 시설 ${SITE.시설.length}개 · 변경관리 ${SITE.변경관리.length}건)`,
-  `조문이 연결된 사내 문서 ${SITE.문서.length}건에서 수정 위치 탐색 · 수정 문구 작성`, '판정 규칙 · 지적·조치 가이드 연결 추적', '조치 목록 · 담당자 · 기한 제안'];
+const ALLCHEM = Object.values(SITES.reduce((a, x) => { x.물질.forEach(m => { (a[m.CAS] ||= { ...m, 사업장들: [] }).사업장들.push(x.id); }); return a; }, {}));
+const SUM = k => SITES.reduce((a, x) => a + x[k].length, 0);
+const STEPS = n => [`바뀐 조문 ${n.변경조문.length}건 읽기 · 변경 요지 추출`, `사업장 ${SITES.length}곳 데이터와 대조 (${SITES.map(x => x.약칭).join('·')} — 물질 ${SUM('물질')}종 · 시설 ${SUM('시설')}개 · 변경관리 ${SUM('변경관리')}건)`,
+  `사업장별 사내 문서 ${SUM('문서')}건에서 수정 위치 탐색 · 수정 문구 작성`, '판정 규칙 · 지적·조치 가이드 연결 추적', '조치 목록 · 담당자 · 기한 제안'];
 function runAnalysis(after) {
   const n = N();
   const steps = STEPS(n);
@@ -317,7 +360,9 @@ function renderAna() {
     $('anaBtn').onclick = runAnalysis;
     return;
   }
-  const t = s.tasks, ta = t.filter(act);
+  const all = s.tasks, t = all.filter(inSite), ta = t.filter(act);
+  const bySite = [...SITES.map(x => x.id), 'HQ'].map(id => { const xs = all.filter(x => x.사업장 === id), xa = xs.filter(act);
+    return { id, n: xs.length, w: xs.filter(x => x.판단 === '확인 전').length, na: xs.length - xa.length, d: xa.filter(x => x.상태 === '완료').length, a: xa.length }; });
   const cnt = {}; ta.forEach(x => cnt[x.구분] = (cnt[x.구분] || 0) + 1);
   const done = ta.filter(x => x.상태 === '완료').length, prog = ta.filter(x => x.상태 === '진행 중').length;
   const over = ta.filter(x => x.상태 !== '완료' && x.기한 < base()).length;
@@ -328,27 +373,31 @@ function renderAna() {
     <div class="row between"><div><h2>영향 분석 결과 · 조치 목록</h2><p class="desc" style="margin:0">분석일 ${s.분석일} · AI 제안 ${t.filter(x => x.출처 === 'AI').length}건 · 직접 추가 ${t.filter(x => x.출처 !== 'AI').length}건 · 담당자가 AI 추천을 확인해 조치 대상·비대상을 판단합니다. 담당자와 기한은 바로 바꿀 수 있습니다.</p></div>
       <div class="row noprint">${jw ? `<button class="btn blue sm" id="bulkBtn">확인 전 ${jw}건 모두 조치 대상</button>` : ''}<button class="btn ghost sm" id="notifyBtn">담당자 알림 발송</button><button class="btn ghost sm" id="csvBtn">엑셀(CSV) 내보내기</button><button class="btn ghost sm" id="reBtn">다시 분석</button></div></div>
     <div class="chips"><span class="chip" style="${jw ? 'border-color:var(--orange);background:var(--lorange)' : ''}">판단 대기 <b>${jw}</b></span><span class="chip">조치 대상 <b>${jy}</b></span><span class="chip">비대상 <b>${jn}</b></span><span class="muted" style="align-self:center">|</span>${Object.entries(cnt).map(([k, v]) => `<span class="chip">${esc(k)} <b>${v}</b></span>`).join('')}<span class="chip">문서 수정 제안 <b>${docRecs.length}</b>곳 (채택 ${docRecs.filter(r => r.채택).length})</span></div>
+    <div class="chips">${bySite.map(b => `<span class="chip" data-site="${b.id === 'HQ' ? 'ALL' : b.id}" style="cursor:pointer;${curSite === b.id ? 'border-color:var(--blue);background:var(--bg)' : ''}">${esc(siteName(b.id))} <b>${b.n ? `${b.n}건` : '영향 없음'}</b>${b.n ? ` · 완료 ${b.a ? Math.round(b.d / b.a * 100) : 0}%${b.w ? ` · 판단 대기 ${b.w}` : ''}` : ''}</span>`).join('')}</div>
     <div class="prog"><span class="d" style="width:${ta.length ? done / ta.length * 100 : 0}%"></span><span class="p" style="width:${ta.length ? prog / ta.length * 100 : 0}%"></span></div>
     <div class="legend"><span><i style="background:var(--green)"></i>완료 ${done}</span><span><i style="background:var(--orange)"></i>진행 중 ${prog}</span><span><i style="background:#E3E9F2"></i>대기 ${ta.length - done - prog}</span><span>(비대상 ${jn}건 제외)</span>${over ? `<span style="color:var(--red);font-weight:700">기한 경과 ${over}</span>` : ''}</div>
     <div class="scroll" style="margin-top:12px"><table class="tasks" id="taskTable">
-      <tr><th>구분</th><th style="min-width:300px">영향 대상 · 내용</th><th>조치</th><th style="min-width:150px">담당자 판단</th><th>담당자</th><th>기한</th><th>상태</th><th class="noprint"></th></tr>
-      ${t.map((x, i) => taskRow(x, i)).join('')}
+      <tr><th>사업장</th><th>구분</th><th style="min-width:280px">영향 대상 · 내용</th><th>조치</th><th style="min-width:150px">담당자 판단</th><th>담당자</th><th>기한</th><th>상태</th><th class="noprint"></th></tr>
+      ${all.map((x, i) => inSite(x) ? taskRow(x, i) : '').join('')}
     </table></div>
   </div>
   <div class="card noprint">
     <h2>조치 항목 직접 추가</h2>
     <div class="row" style="align-items:flex-end">
+      <label class="field"><span>사업장</span><select id="adSite">${SITES.map(x => `<option value="${x.id}" ${x.id === curSite ? 'selected' : ''}>${esc(x.약칭)}</option>`).join('')}<option value="HQ">본사 공통</option></select></label>
       <label class="field"><span>구분</span><select id="adKind">${['설비 변경', '시설', '물질', '문서', '교육', '신고·제출', '지식(규칙)', '기타'].map(k => `<option>${k}</option>`).join('')}</select></label>
       <label class="field" style="flex:1;min-width:180px"><span>대상</span><input type="text" id="adTarget" style="width:100%" placeholder="예: P-301 벤젠 이송배관"></label>
       <label class="field" style="flex:1.4;min-width:200px"><span>조치 내용</span><input type="text" id="adAction" style="width:100%" placeholder="예: 배관 표지 교체"></label>
-      <label class="field"><span>담당자</span><select id="adOwner">${personOpts('이수진')}</select></label>
+      <label class="field"><span>담당자</span><select id="adOwner">${personOpts('', curSite === 'ALL' ? 'ULS' : curSite)}</select></label>
       <label class="field"><span>기한</span><input type="date" id="adDue" value="${addDays(n.시행일, -14)}"></label>
       <div class="field"><button class="btn blue" id="adBtn">추가</button></div>
     </div>
   </div>`;
   $('taskTable').onchange = onTaskChange;
   $('taskTable').onclick = onTaskClick;
-  $('reBtn').onclick = () => { if (confirmBox('다시 분석하면 AI 제안 항목의 담당자·기한·상태가 초기화됩니다. (직접 추가한 항목은 유지)')) { const manual = s.tasks.filter(x => x.출처 !== 'AI'); delete S.notices[n.id]; runAnalysis(() => S.notices[n.id].tasks.push(...manual)); } };
+  $('anaBox').querySelectorAll('.chip[data-site]').forEach(c => c.onclick = () => setSite(c.dataset.site));
+  $('adSite').onchange = e => { $('adOwner').innerHTML = personOpts('', e.target.value); };
+  $('reBtn').onclick = () => { if (confirmBox('다시 분석하면 AI 제안 항목의 담당자·기한·상태가 초기화됩니다. (직접 추가한 항목은 유지)')) { const manual = all.filter(x => x.출처 !== 'AI'); delete S.notices[n.id]; runAnalysis(() => S.notices[n.id].tasks.push(...manual)); } };
   $('csvBtn').onclick = () => exportCsv(n, t);
   if ($('bulkBtn')) $('bulkBtn').onclick = () => { t.filter(x => x.판단 === '확인 전').forEach(x => { x.판단 = '조치 대상'; x.판단자 = '김지훈'; }); log(`${n.id} AI 추천 ${jw}건 일괄 확인 → 조치 대상`); save(); renderAna(); toast(`${jw}건을 조치 대상으로 확정했습니다`); };
   $('notifyBtn').onclick = () => {
@@ -359,7 +408,7 @@ function renderAna() {
   $('adBtn').onclick = () => {
     const 대상 = $('adTarget').value.trim(), 조치 = $('adAction').value.trim();
     if (!대상 || !조치) return toast('대상과 조치 내용을 입력하세요');
-    t.push({ id: `${n.id}-M${t.filter(x => x.출처 !== 'AI').length + 1}`, 출처: '직접', 상태: '대기', 판단: '조치 대상', 판단자: '김지훈', 구분: $('adKind').value, 대상, 영향: '담당자 직접 추가', 조치, 담당자: $('adOwner').value, 기한: $('adDue').value, 근거: [] });
+    all.push({ id: `${n.id}-M${all.filter(x => x.출처 !== 'AI').length + 1}`, 사업장: $('adSite').value, 출처: '직접', 상태: '대기', 판단: '조치 대상', 판단자: '김지훈', 구분: $('adKind').value, 대상, 영향: '담당자 직접 추가', 조치, 담당자: $('adOwner').value, 기한: $('adDue').value, 근거: [] });
     log(`${n.id} 조치 직접 추가: ${대상} — ${조치}`); save(); renderAna(); toast('조치 항목을 추가했습니다');
   };
 }
@@ -384,11 +433,12 @@ function taskRow(x, i) {
     ${na ? `<textarea data-f="판단사유" placeholder="비대상 사유 (필수)" style="min-height:52px;margin-top:4px;font-size:12px;${x.판단사유 ? '' : 'border-color:var(--red)'}">${esc(x.판단사유 || '')}</textarea>` : ''}
     ${!wait && x.판단자 ? `<div class="small muted" style="margin-top:3px">확인: ${esc(x.판단자)}</div>` : ''}`;
   return `<tr class="${over ? 'over' : ''} ${na ? 'na' : ''}" data-i="${i}">
+    <td>${sitePill(x.사업장)}</td>
     <td><span class="pill line">${esc(x.구분)}</span><br>${src}</td>
     <td><b>${esc(x.대상)}</b><div class="muted">${esc(x.영향)}</div>${recs}</td>
     <td class="small">${esc(x.조치)}${link}</td>
     <td>${judge}</td>
-    <td><select data-f="담당자">${personOpts(x.담당자)}</select></td>
+    <td><select data-f="담당자">${personOpts(x.담당자, x.사업장 === 'HQ' ? null : x.사업장)}</select></td>
     <td><input type="date" data-f="기한" value="${x.기한}"><div class="small ${over ? '' : 'muted'}" style="${over ? 'color:var(--red);font-weight:700' : ''}">${dday(x.기한)}</div></td>
     <td>${na ? '<span class="pill gray">해당 없음</span>' : `<select data-f="상태" ${wait ? 'disabled title="먼저 조치 대상 여부를 확인하세요"' : ''}>${ST.map(s => `<option ${s === x.상태 ? 'selected' : ''}>${s}</option>`).join('')}</select>${wait ? '<div class="small muted">판단 후 진행</div>' : ''}`}</td>
     <td class="noprint">${x.출처 !== 'AI' ? `<button class="btn ghost sm" data-del="${i}">삭제</button>` : ''}</td></tr>`;
@@ -424,7 +474,7 @@ function onTaskClick(e) {
   if (el.dataset.edit) { const [i, j] = ij(el.dataset.edit); $(`ed-${i}-${j}`).classList.toggle('hidden'); }
 }
 function exportCsv(n, t) {
-  const rows = [['번호', '구분', '대상', '영향', '조치', '담당자 판단', '비대상 사유', '판단자', '담당자', '기한', '상태', '출처', '근거']].concat(t.map(x => [x.id, x.구분, x.대상, x.영향, x.조치, x.판단, x.판단사유 || '', x.판단자 || '', x.담당자, x.기한, x.판단 === '비대상' ? '해당 없음' : x.상태, x.출처 === 'AI' ? `AI(${Math.round(x.신뢰도 * 100)}%)` : '직접', (x.근거 || []).join(' ')]));
+  const rows = [['번호', '사업장', '구분', '대상', '영향', '조치', '담당자 판단', '비대상 사유', '판단자', '담당자', '기한', '상태', '출처', '근거']].concat(t.map(x => [x.id, siteName(x.사업장), x.구분, x.대상, x.영향, x.조치, x.판단, x.판단사유 || '', x.판단자 || '', x.담당자, x.기한, x.판단 === '비대상' ? '해당 없음' : x.상태, x.출처 === 'AI' ? `AI(${Math.round(x.신뢰도 * 100)}%)` : '직접', (x.근거 || []).join(' ')]));
   const csv = '﻿' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `${n.id}_조치목록.csv`; a.click();
 }
@@ -480,7 +530,7 @@ function renderEditor() {
   const id = $('edRule').value, r = K.규칙.find(x => x.id === id);
   const v = r ? (r.버전.find(x => !x.폐지일) || r.버전[r.버전.length - 1]) : null;
   let body = '';
-  if (id === 'QTY') body = `<div class="field"><span>물질</span><select id="edCas">${SITE.물질.map(m => `<option value="${m.CAS}">${esc(m.이름)} (현재 ${qtyAt(m, base()).하위} t)</option>`).join('')}</select></div><div class="field"><span>하위 규정수량 (t)</span><input type="number" id="edVal" value="10"></div>`;
+  if (id === 'QTY') body = `<div class="field"><span>물질</span><select id="edCas">${ALLCHEM.map(m => `<option value="${m.CAS}">${esc(m.이름)} (현재 ${qtyAt(m, base()).하위} t)</option>`).join('')}</select></div><div class="field"><span>하위 규정수량 (t)</span><input type="number" id="edVal" value="10"></div>`;
   else if (r.유형 === '조건판정') body = `<div class="field"><span>제출 기한 (변경완료 예정일 기준 일수) · 최신 v${v.버전}: ${v.결과.기한.일수}</span><input type="number" id="edVal" value="${v.결과.기한.일수}"></div>`;
   else if (r.유형 === '체크리스트') body = `<div class="field"><span>필수 항목 (한 줄에 하나) · 최신 v${v.버전}</span><textarea id="edVal" style="min-height:150px">${esc(v.필수항목.join('\n'))}</textarea></div>`;
   else if (r.유형 === '결정표') body = `<div class="field"><span>결정표 (검사 주기 · 년) · 최신 v${v.버전}</span><table>${v.결정표.map((t, k) => `<tr><td>${t.사업장군} ${t.위험도 || ''}</td><td><input type="number" data-k="${k}" class="edRow" value="${t.주기_년}" style="width:70px"> 년</td></tr>`).join('')}<tr><td>연장 최대</td><td><input type="number" id="edExt" value="${v.연장.최대_년}" style="width:70px"> 년</td></tr></table></div>`;
@@ -525,7 +575,7 @@ function showYaml(a) {
 
 // ================================================================ ⑤ 대시보드
 function renderDash() {
-  const raw = NOTICES.flatMap(n => (S.notices[n.id]?.tasks || []).map(t => ({ ...t, n })));
+  const raw = NOTICES.flatMap(n => (S.notices[n.id]?.tasks || []).filter(inSite).map(t => ({ ...t, n })));
   const all = raw.filter(act), jw = raw.filter(t => t.판단 === '확인 전').length, jn = raw.length - all.length;
   const done = all.filter(t => t.상태 === '완료').length;
   const over = all.filter(t => t.상태 !== '완료' && t.기한 < base());
@@ -537,7 +587,7 @@ function renderDash() {
     [over.length + '건', '기한 경과', over.length > 0], [pend + '건', '규칙 승인 대기', pend > 0],
   ].map(([v, l, a]) => `<div class="kpi ${a ? 'alert' : ''}"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
   $('dashCards').innerHTML = NOTICES.map(n => {
-    const tr = S.notices[n.id]?.tasks || [], t = tr.filter(act), w = tr.filter(x => x.판단 === '확인 전').length, d = t.filter(x => x.상태 === '완료').length, p = t.filter(x => x.상태 === '진행 중').length;
+    const tr = (S.notices[n.id]?.tasks || []).filter(inSite), t = tr.filter(act), w = tr.filter(x => x.판단 === '확인 전').length, d = t.filter(x => x.상태 === '완료').length, p = t.filter(x => x.상태 === '진행 중').length;
     const o = t.filter(x => x.상태 !== '완료' && x.기한 < base()).length;
     const kinds = {}; t.forEach(x => { kinds[x.구분] ||= [0, 0]; kinds[x.구분][0]++; if (x.상태 === '완료') kinds[x.구분][1]++; });
     const pct = t.length ? Math.round(d / t.length * 100) : 0;
@@ -549,11 +599,18 @@ function renderDash() {
       <div class="chips" style="margin:0">${Object.entries(kinds).map(([k, [a, b]]) => `<span class="chip">${esc(k)} <b>${b}/${a}</b></span>`).join('')}</div>`
       : `<p class="muted" style="margin:6px 0">아직 영향도 분석 전입니다.</p><button class="btn orange sm">영향도 분석</button>`}</div>`;
   }).join('');
+  // 사업장 × 고시 진행 매트릭스
+  const cell = (n, id) => { const s0 = S.notices[n.id]; if (!s0) return '<span class="muted">미분석</span>';
+    const xs = s0.tasks.filter(x => x.사업장 === id), xa = xs.filter(act); if (!xs.length) return '<span class="muted">영향 없음</span>';
+    const d = xa.filter(x => x.상태 === '완료').length, w = xs.filter(x => x.판단 === '확인 전').length, o = xa.filter(x => x.상태 !== '완료' && x.기한 < base()).length, pct = xa.length ? Math.round(d / xa.length * 100) : 100;
+    return `<b>${pct}%</b> <span class="muted small">${d}/${xa.length}${w ? ` · 판단 대기 ${w}` : ''}</span>${o ? ` <span class="pill red">경과 ${o}</span>` : ''}<div class="prog" style="height:6px;margin-top:3px"><span class="d" style="width:${pct}%"></span></div>`; };
+  $('matrixTable').innerHTML = `<tr><th>사업장</th>${NOTICES.map(n => `<th style="white-space:normal;min-width:150px">${esc(n.제목.replace('[가상] ', '').split('—')[1] || n.제목)}<div style="font-weight:400;font-size:11px;opacity:.8">시행 ${n.시행일}</div></th>`).join('')}</tr>` +
+    [...SITES.map(x => x.id), 'HQ'].filter(id => curSite === 'ALL' || id === curSite || id === 'HQ').map(id => `<tr><td><b>${esc(siteName(id))}</b></td>${NOTICES.map(n => `<td>${cell(n, id)}</td>`).join('')}</tr>`).join('');
   const own = {}; all.forEach(t => { own[t.담당자] ||= { a: 0, d: 0, o: 0, p: 0 }; const x = own[t.담당자]; x.a++; if (t.상태 === '완료') x.d++; else if (t.기한 < base()) x.o++; if (t.상태 === '진행 중') x.p++; });
-  $('ownerTable').innerHTML = `<tr><th>담당자</th><th class="num">배정</th><th class="num">진행 중</th><th class="num">완료</th><th class="num">기한 경과</th><th style="width:30%">완료율</th></tr>` +
-    PEOPLE.filter(p => own[p.이름]).map(p => { const x = own[p.이름]; return `<tr><td>${esc(p.이름)} <span class="muted">${esc(p.부서)}</span></td><td class="num">${x.a}</td><td class="num">${x.p}</td><td class="num">${x.d}</td><td class="num" style="${x.o ? 'color:var(--red);font-weight:700' : ''}">${x.o}</td><td><div class="prog"><span class="d" style="width:${x.d / x.a * 100}%"></span></div></td></tr>`; }).join('');
+  $('ownerTable').innerHTML = `<tr><th>담당자</th><th>사업장</th><th class="num">배정</th><th class="num">진행 중</th><th class="num">완료</th><th class="num">기한 경과</th><th style="width:30%">완료율</th></tr>` +
+    PEOPLE.filter(p => own[p.이름]).map(p => { const x = own[p.이름]; return `<tr><td>${esc(p.이름)} <span class="muted">${esc(p.부서)}</span></td><td>${sitePill(p.사업장)}</td><td class="num">${x.a}</td><td class="num">${x.p}</td><td class="num">${x.d}</td><td class="num" style="${x.o ? 'color:var(--red);font-weight:700' : ''}">${x.o}</td><td><div class="prog"><span class="d" style="width:${x.d / x.a * 100}%"></span></div></td></tr>`; }).join('');
   const dues = [...over, ...soon].sort((a, b) => a.기한 < b.기한 ? -1 : 1).slice(0, 12);
-  $('dueTable').innerHTML = `<tr><th>기한</th><th>조치</th><th>담당</th><th>상태</th></tr>` + (dues.map(t => `<tr class="${t.기한 < base() ? 'over' : ''}"><td><b>${t.기한}</b><br><span class="small" style="${t.기한 < base() ? 'color:var(--red);font-weight:700' : ''}">${dday(t.기한)}</span></td><td><b>${esc(t.대상)}</b><div class="muted">${esc(t.조치)} · ${t.n.id}</div></td><td>${esc(t.담당자)}</td><td>${taskPill(t.상태)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">30일 이내 마감 항목이 없습니다. 기준일을 바꿔 보세요.</td></tr>');
+  $('dueTable').innerHTML = `<tr><th>기한</th><th>조치</th><th>담당</th><th>상태</th></tr>` + (dues.map(t => `<tr class="${t.기한 < base() ? 'over' : ''}"><td><b>${t.기한}</b><br><span class="small" style="${t.기한 < base() ? 'color:var(--red);font-weight:700' : ''}">${dday(t.기한)}</span></td><td>${sitePill(t.사업장)} <b>${esc(t.대상)}</b><div class="muted">${esc(t.조치)} · ${t.n.id}</div></td><td>${esc(t.담당자)}</td><td>${taskPill(t.상태)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">30일 이내 마감 항목이 없습니다. 기준일을 바꿔 보세요.</td></tr>');
   $('logTable').innerHTML = `<tr><th>일시</th><th>처리자</th><th>내용</th></tr>` + S.log.slice(0, 25).map(l => `<tr><td class="small">${esc(l.t)}</td><td>${esc(l.who)}</td><td class="small">${esc(l.msg)}</td></tr>`).join('');
 }
 $('dashCards').onclick = e => { const c = e.target.closest('[data-n]'); if (!c) return; goNotice(c.dataset.n, 't3'); if (!S.notices[c.dataset.n]) runAnalysis(); };
@@ -562,7 +619,7 @@ $('dashCards').onclick = e => { const c = e.target.closest('[data-n]'); if (!c) 
 const citeHtml = list => list.map(c => `<div class="cite"><b>${esc(c.조문)}</b> <span class="muted">(${esc(c.법령)}, 시행 ${esc(c.시행일)})</span><br>${esc(c.내용)}</div>`).join('');
 const CHANGE = [['취급량_증가', '취급량 증가'], ['취급시설_용량_증가', '취급시설 용량 증가'], ['신규_취급시설', '새로운 취급시설 설치'], ['물질_변경_추가', '유해화학물질 변경·추가'],
   ['함량_농도_성상_변경', '함량·농도·성상 변경'], ['위험도_증가', '위 변경으로 위험 증가'], ['시설_위치_변경', '사업장 내 취급시설 위치 변경']];
-$('facility').innerHTML = SITE.시설.map(f => `<option>${esc(f.이름)}</option>`).join('');
+$('facility').innerHTML = SITES.map(x => `<optgroup label="${esc(x.사업장)}">${x.시설.map(f => `<option>${esc(x.약칭)} · ${esc(f.이름)}</option>`).join('')}</optgroup>`).join('');
 $('changeChecks').innerHTML = CHANGE.map(([k, t]) => `<label class="chk"><input type="checkbox" data-k="${k}"> ${t}</label>`).join('');
 function runJudge() {
   const input = { 변경완료_예정일: $('doneDate').value };
@@ -601,8 +658,8 @@ function renderKnowledge() {
     <div class="scroll"><table><tr><th>버전</th><th>시행일</th><th>폐지일</th><th>상태</th><th>승인</th><th>근거 조문</th><th>핵심 값</th></tr>
     ${r.버전.map(v => { const act = activeVersion(r, base()) === v; return `<tr><td>v${v.버전}</td><td>${v.시행일}</td><td>${v.폐지일 || '-'}</td><td>${act ? '<span class="pill green">기준일 시행 중</span>' : v.시행일 > base() ? '<span class="pill orange">시행 예정</span>' : '<span class="pill gray">이력</span>'}</td><td class="small">${esc(v.승인)}</td><td class="small">${v.근거.join(', ')}</td>
       <td class="small">${v.결과?.기한 ? `기한 ${v.결과.기한.일수}일` : v.결정표 ? `결정표 ${v.결정표.map(t => t.주기_년).join('/')}년 · 연장 ${v.연장?.최대_년}년` : v.필수항목 ? `필수 ${v.필수항목.length}항목` : ''}</td></tr>`; }).join('')}</table></div></div>`).join('');
-  $('qtyTable').innerHTML = `<tr><th>물질</th><th>CAS</th><th class="num">하위 (기본)</th><th>개정 이력</th><th class="num">기준일 적용 값</th></tr>` +
-    SITE.물질.map(m => `<tr><td>${esc(m.이름)}</td><td>${m.CAS}</td><td class="num">${m.규정수량_하위_t} t</td><td class="small">${(K.수량[m.CAS] || []).map(x => `${x.시행일}부터 ${x.하위} t (${esc(x.승인)} 승인)`).join('<br>') || '-'}</td><td class="num"><b>${qtyAt(m, base()).하위} t</b></td></tr>`).join('');
+  $('qtyTable').innerHTML = `<tr><th>물질</th><th>CAS</th><th>취급 사업장</th><th class="num">하위 (기본)</th><th>개정 이력</th><th class="num">기준일 적용 값</th></tr>` +
+    ALLCHEM.map(m => `<tr><td>${esc(m.이름)}</td><td>${m.CAS}</td><td>${m.사업장들.map(sitePill).join('')}</td><td class="num">${m.규정수량_하위_t} t</td><td class="small">${(K.수량[m.CAS] || []).map(x => `${x.시행일}부터 ${x.하위} t (${esc(x.승인)} 승인)`).join('<br>') || '-'}</td><td class="num"><b>${qtyAt(m, base()).하위} t</b></td></tr>`).join('');
   const arts = Object.values(K.조문).flat();
   $('lawTable').innerHTML = `<tr><th>ID</th><th>조문</th><th>제목</th><th>시행일</th><th>폐지일</th><th>해시</th><th>내용</th></tr>` +
     arts.map(a => `<tr><td>${a.id}</td><td>${esc(label(a))}</td><td>${esc(a.제목)}</td><td>${a.시행일}</td><td>${a.폐지일 || '-'}</td><td><code>${a.해시}</code></td><td class="small">${esc(a.내용)}</td></tr>`).join('');
@@ -611,7 +668,7 @@ function renderKnowledge() {
   const results = K.정답셋.map(c => {
     let act;
     if (c.유형 === '변경판정') { const r = judgeChange(K, c.입력, c.기준일); act = { 규칙: r.map(x => x.규칙), 기한: r[0]?.기한 }; }
-    else if (c.유형 === '정기검사') act = inspectionSchedule(K, { ...SITE, 시설: SITE.시설.filter(f => f.id === c.입력.시설) }, c.기준일)[0];
+    else if (c.유형 === '정기검사') act = inspectionSchedule(K, { ...SITE0, 시설: SITE0.시설.filter(f => f.id === c.입력.시설) }, c.기준일)[0];
     else act = checkLabel(K, c.입력.항목, c.기준일);
     return { c, ok: Object.entries(c.기대).every(([k, v]) => JSON.stringify(v) === JSON.stringify(act[k])) };
   });
@@ -644,5 +701,7 @@ function render() {
   if (curTab === 't6') renderKnowledge();
 }
 $('baseDate').onchange = render;
+$('siteSel').innerHTML = `<option value="ALL">전체 (${SITES.length}곳)</option>` + SITES.map(x => `<option value="${x.id}">${esc(x.사업장)}</option>`).join('');
+$('siteSel').onchange = e => setSite(e.target.value);
 $('resetBtn').onclick = e => { e.preventDefault(); if (confirmBox('시연 데이터를 처음 상태로 되돌릴까요? (이 브라우저에 저장된 분석·승인·이력이 삭제됩니다)')) { seed(); K = knowledge(); render(); toast('시연 데이터를 초기화했습니다'); } };
 render();
