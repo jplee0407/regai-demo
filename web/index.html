@@ -168,13 +168,12 @@
   <div class="bar">
     <div class="tabs" id="tabs">
       <button data-t="t1" class="on">① 사업장 현황</button>
-      <button data-t="t8">② 규칙 검토·확정<span class="dot hidden" id="rvDot"></span></button>
+      <button data-t="t8">② 지식·규칙 관리<span class="dot hidden" id="rvDot"></span></button>
       <button data-t="t2">③ 고시 모니터링<span class="dot hidden" id="newDot"></span></button>
       <button data-t="t3">④ 영향 분석·조치</button>
-      <button data-t="t4">⑤ 신·구 비교·규칙 반영</button>
-      <button data-t="t5">⑥ 진행 대시보드</button>
-      <button data-t="t6">⑦ 지식 기반·판정</button>
-      <button data-t="t7">⑧ GitHub 반영 흐름</button>
+      <button data-t="t5">⑤ 진행 대시보드</button>
+      <button data-t="t6">⑥ 판정 시뮬레이션</button>
+      <button data-t="t7">⑦ GitHub 반영 흐름</button>
     </div>
     <div class="row"><label class="date">사업장 <select id="siteSel"></select></label><label class="date">기준일 <input type="date" id="baseDate"></label></div>
   </div>
@@ -224,19 +223,7 @@
     <div id="anaBox"></div>
   </section>
 
-  <!-- ⑤ 신·구 비교·규칙 반영 -->
-  <section id="t4" class="hidden">
-    <div class="card">
-      <div class="row"><b>고시 선택</b> <select id="selN4" style="max-width:640px"></select></div>
-      <div id="nHead4" style="margin-top:10px"></div>
-    </div>
-    <div class="card"><h2>신·구 조문 대비</h2><div id="cmpOut"></div></div>
-    <div class="card"><h2>AI 규칙 반영 제안 → 전문가 확인·승인</h2><div id="propOut"></div></div>
-    <div class="card" id="kx"></div>
-    <div class="card hidden" id="yamlBox"><h2>저장소에 들어갈 형태 (YAML)</h2><pre id="yamlOut"></pre></div>
-  </section>
-
-  <!-- ⑥ 대시보드 -->
+  <!-- ⑤ 대시보드 -->
   <section id="t5" class="hidden">
     <div class="grid6" id="dashKpi"></div>
     <div class="card" style="margin-top:14px"><h2>사업장별 · 고시별 진행현황</h2><div class="scroll"><table id="matrixTable"></table></div></div>
@@ -249,10 +236,10 @@
     <div class="card"><h2>최근 이력</h2><div class="scroll"><table id="logTable"></table></div></div>
   </section>
 
-  <!-- ⑦ 지식 기반·판정 -->
+  <!-- ⑥ 판정 시뮬레이션 -->
   <section id="t6" class="hidden">
     <div class="card">
-      <h2>판정 시험: 시설 변경 계획</h2>
+      <h2>시설 변경 계획 판정</h2>
       <p class="desc">시설 선택 → 변경 후 값 입력 → 비교·판정</p>
       <div class="row" style="align-items:flex-end">
         <label class="field"><span>대상 시설 <span class="muted" style="font-weight:400">(상단 사업장 선택 기준)</span></span><select id="cgFac" style="min-width:280px"></select></label>
@@ -268,38 +255,37 @@
     </div>
     <div class="card"><h2>판정 결과</h2><p class="desc" id="judgeHint">위에서 변경 후 값을 입력하고 "변경 내용 비교·판정"을 누르세요.</p><div id="cgDiff"></div><div id="judgeOut"></div></div>
     <div class="grid2">
-      <div class="card"><h2>판정 시험: 용기·포장 표시</h2><div id="labelChecks"></div><button class="btn" id="labelBtn">점검하기</button></div>
+      <div class="card"><h2>용기·포장 표시 점검</h2><div id="labelChecks"></div><button class="btn" id="labelBtn">점검하기</button></div>
       <div class="card"><h2>점검 결과</h2><div id="labelOut" class="desc">점검하기를 누르세요.</div></div>
     </div>
-    <div class="card"><h2>판정 시험: 물질 규정수량 구간 (고시 원문 기준표)</h2><p class="desc">규정수량 규정 별표 2·3 기준 · R-QTY-1</p>
+    <div class="card"><h2>물질 규정수량 구간 판정</h2><p class="desc">규정수량 규정 별표 2·3 기준 · R-QTY-1</p>
       <div class="row" style="align-items:flex-end"><label class="field"><span>물질명 또는 CAS</span><input type="text" id="qjQ" list="qjList" value="7647-01-0" style="width:260px"><datalist id="qjList"></datalist></label>
         <label class="field"><span>함량 (%)</span><input type="number" id="qjPct" value="35" style="width:80px"></label>
         <label class="field"><span>성상</span><select id="qjState"><option>액체</option><option>기체</option><option>고체</option></select></label>
         <label class="field"><span>최대보유량 (톤, 사업장 합계)</span><input type="number" id="qjQty" value="180" style="width:100px"></label>
         <div class="field"><button class="btn" id="qjBtn">판정하기</button></div></div>
       <div id="qjOut"></div></div>
-    <div class="card"><h2>판정 규칙</h2><div id="rulesOut"></div></div>
-    <div class="card"><h2>물질별 규정수량 (수량기준 표)</h2><div class="scroll"><table id="qtyTable"></table></div></div>
-    <div class="card"><h2>조문 (시행일별 버전)</h2><div class="scroll"><table id="lawTable"></table></div></div>
-    <div class="card"><h2>지적·조치 가이드</h2><div class="scroll"><table id="guideTable"></table></div></div>
     <div class="card"><h2>정답셋 회귀 테스트 (브라우저에서 실행)</h2><div class="scroll"><table id="testTable"></table></div></div>
   </section>
 
-  <!-- ② 규칙 검토·확정 -->
+  <!-- ② 지식·규칙 관리 -->
   <section id="t8" class="hidden">
     <div class="grid6" id="rvKpi"></div>
     <div class="card" id="oblCard" style="margin-top:14px"></div>
     <div class="card" style="margin-top:14px">
-      <div class="row between"><div><h2>규칙 검토·확정</h2><p class="desc" style="margin:0">공식 판정은 <b>확정</b> 규칙만 사용 · 미확정 개정안은 권고 일정으로만 표시</p></div>
-        <div class="row"><label class="small">묶어 보기 <select id="rvGroup"><option value="의무">의무별</option><option value="고시">출처 고시별</option></select></label><label class="small">정렬 <select id="rvSort"><option value="최신">고시일 최신순</option><option value="오래된">고시일 오래된순</option><option value="코드">의무 코드·이름순</option></select></label><select id="rvFilter"><option value="">전체 상태</option><option>AI 추천</option><option>AI 초안</option><option>검토 중</option><option>수정 요청</option><option>확정</option><option>반려</option></select><button class="btn ghost sm" id="rvExport">확정 규칙 내보내기 (JSON)</button></div></div>
-      <div class="grid2" style="grid-template-columns:300px 1fr;margin-top:12px">
+      <div class="row between"><div><h2 style="margin:0">지식·규칙 관리</h2><p class="desc" style="margin:2px 0 0">보기 → 수정(수정안) → 확정 · 판정에는 <b>확정</b>된 지식만 사용</p></div>
+        <div class="row"><span class="seg"><button class="btn sm" data-rvview="목록">목록</button><button class="btn ghost sm" data-rvview="연결도">지식 연결도</button></span></div></div>
+      <div class="row" id="rvTools" style="margin-top:8px"><label class="small">묶어 보기 <select id="rvGroup"><option value="의무">의무별</option><option value="고시">출처 고시별</option></select></label><label class="small">정렬 <select id="rvSort"><option value="최신">고시일 최신순</option><option value="오래된">고시일 오래된순</option><option value="코드">의무 코드·이름순</option></select></label><select id="rvFilter"><option value="">전체 상태</option><option>수정안</option><option>AI 추천</option><option>AI 초안</option><option>검토 중</option><option>수정 요청</option><option>확정</option><option>반려</option></select><button class="btn ghost sm" id="rvExport">확정 규칙 내보내기 (JSON)</button></div>
+      <div class="grid2" id="rvMain" style="grid-template-columns:300px 1fr;margin-top:12px">
         <div id="rvList" style="max-height:780px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px"></div>
         <div id="rvDetail"></div>
       </div>
+      <div id="kxHost" class="hidden" style="margin-top:12px"></div>
     </div>
+    <div class="card hidden" id="yamlBox"><h2>저장소에 들어갈 형태 (YAML)</h2><pre id="yamlOut"></pre></div>
   </section>
 
-  <!-- ⑧ GitHub 흐름 -->
+  <!-- ⑦ GitHub 흐름 -->
   <section id="t7" class="hidden">
     <div class="card">
       <h2>법령이 바뀌면 이렇게 반영됩니다</h2>
