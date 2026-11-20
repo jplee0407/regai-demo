@@ -356,7 +356,7 @@ function runAnalysis(after) {
     const tasks = analyze(n);
     tasks.filter(x => x.규칙키 && n.규칙제안.every((q, k) => q.규칙 !== x.규칙키 || S.prop[`${n.id}:${k}`])).forEach(x => { x.상태 = '완료'; x.판단 = '조치 대상'; x.판단자 = '김지훈'; });
     S.notices[n.id] = { 분석일: base(), tasks };
-    if (after) after();
+    if (typeof after === 'function') after();
     log(`${n.id} 영향도 분석 — 조치 ${tasks.length}건 제안`, 'AI'); save();
     setTimeout(() => { renderAna(); toast(`AI가 영향 항목 ${tasks.length}건을 찾았습니다. 담당자·기한을 확인하세요.`); }, 300);
   };
@@ -390,7 +390,7 @@ function renderAna() {
   const s = S.notices[n.id];
   if (!s) {
     $('anaBox').innerHTML = `<div class="card" style="text-align:center;padding:36px"><h2>아직 분석하지 않은 고시입니다</h2><p class="desc">AI가 바뀐 조문을 읽고 우리 사업장의 물질·시설·변경관리·사내 문서·판정 규칙과 대조해 조치 목록을 만듭니다.</p><button class="btn orange big" id="anaBtn">우리 사업장 영향도 분석</button></div>`;
-    $('anaBtn').onclick = runAnalysis;
+    $('anaBtn').onclick = () => runAnalysis();
     return;
   }
   const all = s.tasks, t = all.filter(inSite), ta = t.filter(act);
