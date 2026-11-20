@@ -827,7 +827,7 @@ function graphSvg() {
 
 // ---- 화면
 function renderKX() {
-  if (RV.view !== '연결도') return curTab === 't8' ? renderReview() : null;
+  if (RV.view !== '지식수정') return curTab === 't8' ? renderReview() : null;
   const host = $('kxHost'); if (!host) return;
   host.innerHTML = '<div id="kx"></div>';
   const box = $('kx');
@@ -835,10 +835,10 @@ function renderKX() {
     .map(([k, v]) => `<span><i style="background:${TYPE_COLOR[k]}"></i>${v}</span>`).join('') +
     '<span style="margin-left:10px">선: <b style="color:#C9822B">개정</b> · <b style="color:#2D5FA8">근거</b> · <b style="color:#3A9B6A">연결</b> · <b style="color:#6B5BA8">인용</b> · <b style="color:#B5487A">해석·적용</b> · <b style="color:#9AA5B4">위임(점선)</b></span>';
   box.innerHTML = `
-    <div class="row between"><div><h2 id="kxTitle">지식 연결도 · 지식 편집</h2></div>
-      <div class="row"><input type="text" id="kxQ" placeholder="지식 검색 (예: 표시, 30일, 암모니아)" value="${esc(ED.q)}" style="width:240px"><button class="btn sm" style="background:${TYPE_COLOR.해석}" data-act="new-int">+ 해석·판단</button><button class="btn blue sm" data-act="new">+ 새 점검 규칙</button></div></div>
-    <div class="legend" style="margin:10px 0 4px;flex-wrap:wrap">${legend}</div>
-    <div class="scroll" id="kxGraph" style="border:1px solid var(--line);border-radius:10px;background:#FBFCFE;padding:6px">${graphSvg()}</div>
+    <div class="row between"><div><h2 id="kxTitle" style="margin:0">지식 수정</h2><p class="desc" style="margin:2px 0 0">왼쪽에서 지식을 고르고 수정 · 규칙·규정수량은 수정안 → 목록에서 확정</p></div>
+      <div class="row"><input type="text" id="kxQ" placeholder="지식 검색 (예: 표시, 30일, 암모니아)" value="${esc(ED.q)}" style="width:240px"><button class="btn sm" style="background:${TYPE_COLOR.해석}" data-act="new-int">+ 해석·판단</button><button class="btn blue sm" data-act="new">+ 새 점검 규칙</button><button class="btn ${ED.graph ? '' : 'ghost'} sm" data-act="graph">${ED.graph ? '관계도 닫기' : '전체 관계도 보기'}</button></div></div>
+    ${ED.graph ? `<div class="legend" style="margin:10px 0 4px;flex-wrap:wrap">${legend}</div>
+    <div class="scroll" id="kxGraph" style="border:1px solid var(--line);border-radius:10px;background:#FBFCFE;padding:6px">${graphSvg()}</div>` : ''}
     <div class="grid2" style="grid-template-columns:280px 1fr;margin-top:14px">
       <div id="kxNav" style="max-height:640px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px">${navHtml()}</div>
       <div id="kxDetail">${detailHtml()}</div>
@@ -1130,7 +1130,7 @@ function kxAct(a, v) {
       else if (id.startsWith('I:')) ED.draft = { id, 값: clone(K.해석.find(g => g.id === id.slice(2))) };
       else { const last = latest(r); ED.draft = { id, 이름: r.이름, 설명: r.설명, 버전: clone(last), 시행일: last.시행일 >= base() ? addDays(last.시행일, 1) : base(), 승인자: '김지훈', 의견: '' }; }
       ED.mode = 'edit'; return refreshDetail();
-    case 'cancel': ED.mode = 'view'; ED.draft = null; if (id === 'NEW' || id === 'I:NEW') ED.sel = 'R-23-3'; if (RV.view !== '연결도') return renderReview(); return refreshDetail();
+    case 'cancel': ED.mode = 'view'; ED.draft = null; if (id === 'NEW' || id === 'I:NEW') ED.sel = 'R-23-3'; if (RV.view !== '지식수정') return renderReview(); return refreshDetail();
     case 'days': d.버전.결과.기한.일수 += +v; return refreshDetail();
     case 'cond-del': d.버전.조건.any.splice(+v, 1); return refreshDetail();
     case 'cond-add': { const f = $('kxNewField').value, c = $('kxNewFieldCite').value; if (!f) return toast('추가할 조건을 고르세요'); d.버전.조건.any.push({ 필드: f, 같음: true, 설명: FIELD_NAME[f], 근거: c || d.버전.근거[0] }); return refreshDetail(); }
@@ -1178,6 +1178,7 @@ function kxAct(a, v) {
       return done(`${nid} 규칙을 추가했습니다 — 그래프에 연결되었습니다`, { notice: null, 규칙: nid, 종류: '새규칙', 값: rule, 시행일: rule.버전[0].시행일, 승인자: '김지훈', 일시: nowStr() });
     }
     case 'go-cmp': return openCmp(v);
+    case 'graph': ED.graph = !ED.graph; return renderKX();
     case 'go-ana': return goNotice(v, 't3');
   }
 }
@@ -1702,8 +1703,8 @@ function confirmEdit(i, who, memo) {
 function renderReview() {
   renderObl();
   document.querySelectorAll('[data-rvview]').forEach(b => b.className = `btn sm ${b.dataset.rvview === RV.view ? '' : 'ghost'}`);
-  $('rvTools').classList.toggle('hidden', RV.view === '연결도'); $('rvMain').classList.toggle('hidden', RV.view === '연결도'); $('kxHost').classList.toggle('hidden', RV.view !== '연결도');
-  if (RV.view !== '연결도') $('kxHost').innerHTML = '';
+  $('rvTools').classList.toggle('hidden', RV.view === '지식수정'); $('rvMain').classList.toggle('hidden', RV.view === '지식수정'); $('kxHost').classList.toggle('hidden', RV.view !== '지식수정');
+  if (RV.view !== '지식수정') $('kxHost').innerHTML = '';
   if ($('rvGroup')) $('rvGroup').value = RV.group;
   const all = K.규칙.map(r => ({ r, rv: rvOf(r) }));
   const cnt = s0 => all.filter(x => x.rv.상태 === s0).length;
@@ -1712,7 +1713,7 @@ function renderReview() {
   $('rvKpi').innerHTML = [[(pp + PE.length) + '건', `확정 대기 (개정안 ${pp} · 수정안 ${PE.length})`, pp + PE.length > 0], [all.length + '개', '전체 규칙'], [done + '개', '확정'], [cnt('AI 초안') + '개', 'AI 초안 (검토 전)', cnt('AI 초안') > 0], [cnt('검토 중') + '개', '검토 중'], [cnt('수정 요청') + '개', '수정 요청', cnt('수정 요청') > 0],
     ].map(([v, l, a]) => `<div class="kpi ${a ? 'alert' : ''}"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
   const pend = all.length - done + pp + PE.length; $('rvDot').textContent = pend; $('rvDot').classList.toggle('hidden', !pend);
-  if (RV.view === '연결도') return renderKX();
+  if (RV.view === '지식수정') return renderKX();
   const list = all.filter(x => !RV.filter || x.rv.상태 === RV.filter);
   const groups = {}, ghead = {};
   const EG = '수정안 (확정 대기)', pel = PE.filter(() => !RV.filter || RV.filter === '수정안');
@@ -1743,7 +1744,7 @@ function renderRvDetail() {
   $('rvDetail').innerHTML = `
     <div class="result" style="background:#fff">
       <div class="row between"><h3 style="margin:0">${esc(r.id)} ${esc(r.이름)} <span class="pill gray">${esc(r.유형)}</span> <span class="pill ${RV_ST[rv.상태]}">${rv.상태}</span></h3>
-        <div class="row">${ED.mode === 'edit' && ED.sel === r.id ? '' : `<button class="btn blue sm" data-rvact="edit">✎ 수정</button>`}<button class="btn ghost sm" data-rvgo="${r.id}">연결도에서 보기</button></div></div>
+        <div class="row">${ED.mode === 'edit' && ED.sel === r.id ? '' : `<button class="btn blue sm" data-rvact="edit">✎ 수정</button>`}<button class="btn ghost sm" data-rvgo="${r.id}">지식 수정에서 보기</button></div></div>
       ${(pe => pe.length ? `<div class="small" style="margin:6px 0 0;padding:6px 10px;background:#FFF4E5;border:1px solid var(--orange);border-radius:8px">수정안 ${pe.length}건 확정 대기 — ${pe.map(x => `<a href="#" data-rvsel="E|${x.i}">${esc(x.a.승인자)} ${esc(x.a.일시.slice(0, 10))} (시행 ${esc(x.a.시행일)})</a>`).join(', ')}</div>` : '')(pendEdits().filter(x => x.a.규칙 === r.id))}
       ${ED.mode === 'edit' && ED.sel === r.id ? `<div id="kx" style="margin-top:10px;border:2px solid var(--blue);border-radius:10px;padding:10px;background:#F7FAFF"><div class="small" style="margin-bottom:6px"><b style="color:var(--blue)">수정 중</b> — 저장하면 <b>수정안</b>으로 등록되고, 확정해야 판정에 적용됩니다.</div><div id="kxDetail">${detailHtml()}</div></div>` : ''}
       <p class="muted" style="margin:6px 0">${esc(r.설명)}</p>
@@ -1785,8 +1786,8 @@ $('rvDetail') && ($('rvDetail').onchange = e => {
 });
 $('rvDetail') && ($('rvDetail').onclick = e => {
   if (e.target.closest('#kx')) return;
-  const go = e.target.closest('[data-rvgo]'); if (go) { ED.sel = go.dataset.rvgo; ED.mode = 'view'; ED.draft = null; RV.view = '연결도'; return renderReview(); }
-  const nd = e.target.closest('[data-node]'); if (nd) { e.preventDefault(); ED.sel = nd.dataset.node; ED.mode = 'view'; ED.draft = null; RV.view = '연결도'; return renderReview(); }
+  const go = e.target.closest('[data-rvgo]'); if (go) { ED.sel = go.dataset.rvgo; ED.mode = 'view'; ED.draft = null; RV.view = '지식수정'; return renderReview(); }
+  const nd = e.target.closest('[data-node]'); if (nd) { e.preventDefault(); ED.sel = nd.dataset.node; ED.mode = 'view'; ED.draft = null; RV.view = '지식수정'; return renderReview(); }
   const g4 = e.target.closest('[data-pgo4]'); if (g4) return openCmp(g4.dataset.pgo4);
   const rs = e.target.closest('[data-rvsel]'); if (rs) { e.preventDefault(); RV.sel = rs.dataset.rvsel; return renderReview(); }
   const ea = e.target.closest('[data-eact]'); if (ea) {
