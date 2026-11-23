@@ -175,15 +175,16 @@ function autoCases(d) {
 // 생성형 AI (시연 화면 'AI 설정'과 같은 설정 사용)
 function aiCfg() { try { return JSON.parse(localStorage.getItem('regai-ai')) || {}; } catch (e) { return {}; } }
 const aiOn = () => { const c = aiCfg(); return c.종류 && c.종류 !== '지식' && (c.종류 === '사내' ? !!c.주소 : !!c.키); };
+const normModel = m => { let s = String(m || '').replace(/^\s*claude\s*[:：]\s*/i, '').trim().toLowerCase().replace(/[\s.]+/g, '-'); if (s && /^(sonnet|opus|haiku)/.test(s)) s = 'claude-' + s; return s; };
 async function llm(system, user) {
   const c = aiCfg();
   if (c.종류 === 'Claude') {
     const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': c.키, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: c.모델 || 'claude-sonnet-4-5', max_tokens: 2500, system, messages: [{ role: 'user', content: user }] }) });
+      body: JSON.stringify({ model: normModel(c.모델) || 'claude-sonnet-4-5', max_tokens: 4000, system, messages: [{ role: 'user', content: user }] }) });
     const j = await res.json(); if (!res.ok) throw new Error(j.error?.message || res.status); return j.content.map(b => b.text || '').join('');
   }
   const url = c.주소.replace(/\/$/, '') + (/\/chat\/completions$/.test(c.주소) ? '' : '/v1/chat/completions');
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...(c.키 ? { authorization: `Bearer ${c.키}` } : {}) }, body: JSON.stringify({ model: c.모델 || 'default', temperature: 0, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }) });
+  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...(c.키 ? { authorization: `Bearer ${c.키}` } : {}) }, body: JSON.stringify({ model: c.모델?.trim() || 'default', temperature: 0, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }) });
   const j = await res.json(); if (!res.ok) throw new Error(j.error?.message || res.status); return j.choices[0].message.content;
 }
 async function aiDraft(ids) {

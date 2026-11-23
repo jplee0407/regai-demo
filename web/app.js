@@ -597,22 +597,23 @@ const AIKEY = 'regai-ai';
 function aiCfg() { try { return JSON.parse(localStorage.getItem(AIKEY)) || {}; } catch (e) { return {}; } }
 function aiSave(c) { try { localStorage.setItem(AIKEY, JSON.stringify(c)); } catch (e) { /* 저장 불가 */ } }
 const aiOn = () => { const c = aiCfg(); return c.종류 && c.종류 !== '지식' && (c.종류 === '사내' ? !!c.주소 : !!c.키); };
-const aiLabel = () => { const c = aiCfg(); return !aiOn() ? '지식 기반 (생성형 AI 미연결)' : c.종류 === 'Claude' ? `Claude (${c.모델 || 'claude-sonnet-4-5'})` : `사내 LLM (${c.모델 || '-'})`; };
+const aiLabel = () => { const c = aiCfg(); return !aiOn() ? '지식 기반 (생성형 AI 미연결)' : c.종류 === 'Claude' ? `Claude (${normModel(c.모델) || 'claude-sonnet-4-5'})` : `사내 LLM (${c.모델 || '-'})`; };
+const normModel = m => { let s = String(m || '').replace(/^\s*claude\s*[:：]\s*/i, '').trim().toLowerCase().replace(/[\s.]+/g, '-'); if (s && /^(sonnet|opus|haiku)/.test(s)) s = 'claude-' + s; return s; };
 const AI_SYS = `너는 화학물질관리법(화관법) 전문 컨설턴트다. 사용자는 사업장 환경안전 담당자다.
-규칙: 1) 반드시 [근거 자료]에 있는 사실·조문·수치만 사용한다. 2) 결론을 먼저 말하고, 사업장 사실관계 → 적용 조문(조·항·호를 명시) → 판정 논리 → 기한 → 이행하지 않을 때의 벌칙 → 담당자가 확인할 점 순서로 설명한다. 3) 근거 자료에 없는 내용은 추측하지 말고 "확인 필요"라고 쓴다. 4) 벌칙 금액이 근거 자료에 없으면 금액을 쓰지 않는다. 5) 한국어, 개조식, 600자 내외.`;
+규칙: 1) 반드시 [근거 자료]에 있는 사실·조문·수치만 사용한다. 2) 결론을 먼저 말하고, 사업장 사실관계 → 적용 조문(조·항·호를 명시) → 판정 논리 → 기한 → 이행하지 않을 때의 벌칙 → 담당자가 확인할 점 순서로 설명한다. 3) 근거 자료에 없는 내용은 추측하지 말고 "확인 필요"라고 쓴다. 4) 벌칙 금액이 근거 자료에 없으면 금액을 쓰지 않는다. 5) 한국어, 개조식, 600자 내외로 끝까지 완결한다. 6) 확정되지 않은 개정안(권고·잠정)은 공식 판정과 구분해 '권고(개정안 기준·잠정)'로 표시하고, 결론은 확정 규칙 기준 공식 기한을 먼저 쓴 뒤 권고를 덧붙인다.`;
 async function aiAsk(question, context, history = []) {
   const c = aiCfg();
   const user = `[질문]\n${question}\n\n[근거 자료]\n${context}`;
   if (c.종류 === 'Claude') {
     const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': c.키, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: c.모델 || 'claude-sonnet-4-5', max_tokens: 1500, system: AI_SYS, messages: [...history, { role: 'user', content: user }] }) });
+      body: JSON.stringify({ model: normModel(c.모델) || 'claude-sonnet-4-5', max_tokens: 4000, system: AI_SYS, messages: [...history, { role: 'user', content: user }] }) });
     const j = await res.json(); if (!res.ok) throw new Error(j.error?.message || res.status);
-    return j.content.map(b => b.text || '').join('');
+    return j.content.map(b => b.text || '').join('') + (j.stop_reason === 'max_tokens' ? '\n\n(답변이 길어 여기서 끊겼습니다 — 아래에 "이어서"라고 질문하세요)' : '');
   }
   const url = c.주소.replace(/\/$/, '') + (/\/chat\/completions$/.test(c.주소) ? '' : '/v1/chat/completions');
   const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...(c.키 ? { authorization: `Bearer ${c.키}` } : {}) },
-    body: JSON.stringify({ model: c.모델 || 'default', temperature: 0.2, messages: [{ role: 'system', content: AI_SYS }, ...history, { role: 'user', content: user }] }) });
+    body: JSON.stringify({ model: c.모델?.trim() || 'default', temperature: 0.2, messages: [{ role: 'system', content: AI_SYS }, ...history, { role: 'user', content: user }] }) });
   const j = await res.json(); if (!res.ok) throw new Error(j.error?.message || res.status);
   return j.choices[0].message.content;
 }
@@ -635,7 +636,7 @@ function openAiCfg() {
   const c = aiCfg();
   $('aiBody').innerHTML = `<div class="kv"><b>답변 엔진</b><span><select id="aiKind"><option value="지식" ${!c.종류 || c.종류 === '지식' ? 'selected' : ''}>지식 기반 (오프라인, 생성형 AI 미사용)</option><option value="Claude" ${c.종류 === 'Claude' ? 'selected' : ''}>Claude API (Anthropic)</option><option value="사내" ${c.종류 === '사내' ? 'selected' : ''}>사내 온프레미스 LLM (OpenAI 호환 API)</option></select></span>
     <b>API 주소</b><span><input type="text" id="aiUrl" value="${esc(c.주소 || '')}" style="width:100%" placeholder="사내 LLM만 입력 · 예: http://10.0.0.5:8000/v1"></span>
-    <b>모델</b><span><input type="text" id="aiModel" value="${esc(c.모델 || '')}" style="width:280px" placeholder="Claude: claude-sonnet-4-5 · 사내: 모델명"></span>
+    <b>모델</b><span><input type="text" id="aiModel" value="${esc(c.모델 || '')}" style="width:280px" placeholder="예: claude-sonnet-5-5 (Console Models 목록의 ID) · 사내: 모델명"></span>
     <b>API 키</b><span><input type="password" id="aiKey" value="${esc(c.키 || '')}" style="width:100%" placeholder="Claude API 키 (사내 LLM은 필요 시)" autocomplete="off"></span></div>
     <p class="muted small" style="margin:8px 0 0">키는 이 브라우저에만 저장됩니다 (시연 PC에서만 입력). 어느 엔진이든 화면의 근거 자료만 넘겨 답하게 합니다.</p>
     <div class="row" style="margin-top:10px"><button class="btn green" id="aiSaveBtn">저장</button><button class="btn ghost" id="aiClear">키 삭제</button></div>`;
