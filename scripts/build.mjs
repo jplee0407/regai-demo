@@ -10,6 +10,9 @@ bundle.사업장목록 = ['data/sites/oo-plant.json', 'data/sites/yeosu.json', '
 bundle.본사 = readJson('data/sites/hq.json');
 bundle.해석 = readYaml('data/knowledge/interpretations.yaml');
 bundle.의무 = readYaml('data/knowledge/obligations.yaml');
+bundle.필드 = readYaml('data/knowledge/fields.yaml');
+bundle.매핑 = readYaml('data/knowledge/mappings.yaml');
+bundle.추천문장 = readYaml('data/knowledge/plain.yaml');
 bundle.원문 = readJson('data/knowledge/sources.json');
 bundle.빌드 = { 시각: new Date().toISOString(), 커밋: process.env.GITHUB_SHA?.slice(0, 7) || 'local', 저장소: process.env.GITHUB_REPOSITORY || '' };
 writeJson('web/data/bundle.json', bundle);

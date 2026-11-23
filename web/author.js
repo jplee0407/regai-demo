@@ -206,6 +206,16 @@ async function aiDraft(ids) {
 }
 
 // ---------------------------------------------------------------- 지식 카드 (문장으로 쓰면 AI가 규칙으로 변환)
+const REC = Object.fromEntries((B.추천문장 || []).map(r => [r.조문, r]));
+const RULEISH = ['규칙', '체크리스트'];
+const recOf = ids => ids.map(id => REC[id]).filter(Boolean);
+async function aiRecommend(ids) {
+  const sys = `너는 화학물질관리법 컨설턴트다. 조문을 현장 담당자가 읽기 쉬운 한국어 평서문 1~2문장으로 바꿔 쓴다. 설명·따옴표·머리말 없이 문장만 답한다.
+형식: "[대상]이 [조건1]하거나 [조건2]하면, [기준일] N일 전까지 [할 일]을 [제출처]에게 [서식]으로 제출해야 한다. 단, [예외]."
+조·항·호 번호와 '규칙 제○조에 따른' 같은 인용은 빼고, 원문에 없는 수치·기관은 넣지 않는다. 항목 나열형이면 "…다음 항목을 표시해야 한다: 가, 나, 다"로 쓴다.`;
+  const user = ids.map(id => { const x = ART.find(y => y.id === id); return `[${x.lab}] ${x.a.내용}`; }).join('\n\n');
+  return (await llm(sys, user)).replace(/^["'“]|["'”]$/g, '').trim();
+}
 const EXAMPLE = '계획서 제출 사업장이 취급시설 용량을 늘리거나 새 취급시설을 설치하면, 변경 완료 30일 전까지 변경된 화학사고예방관리계획서를 화학물질안전원장에게 별지 제32호서식으로 제출해야 한다. 단, 계획서 범위 안의 일시적 재고 증가는 해당하지 않는다.';
 // 자연어 문장 → 누가·언제·무엇을·언제까지·예외 (생성형 AI 미연결 시 규칙 기반 해석)
 function parseSentence(raw) {
@@ -223,7 +233,7 @@ function parseSentence(raw) {
   let list = ''; const lm = t.match(/[:：]\s*(.+)$/); if (lm) { list = lm[1].trim(); t = t.slice(0, lm.index).trim(); }
   const cm = t.match(/^(.*?)(?:하면|이면|되면|으면|면|할 때|하는 때|하는 경우|인 경우|한 경우|된 경우|경우에는|경우|때에는|때)(?=[\s,，]|$)[,，]?\s*/);
   let rest = t; if (cm && cm[1].trim()) { o.언제 = cm[1].trim(); rest = t.slice(cm[0].length).trim(); }
-  const who = o.언제.match(/^(.+?(?:사업장|운영자|사업자|영업자|취급자|업체))(?:은|는|이|가)\s+/); if (who) { o.누가 = who[1]; o.언제 = o.언제.slice(who[0].length).trim(); }
+  const who = o.언제.match(/^(.*?(?:사업장|운영자|사업자|영업자|취급자|업체))(?:은|는|이|가)\s+/); if (who) { o.누가 = who[1]; o.언제 = o.언제.slice(who[0].length).trim(); }
   const dm = rest.match(/^(.*?\d+\s*(?:일|개월|년)\s*(?:이전|전|이내|안에|마다)(?:까지|에|마다)?)\s*/);
   if (dm) { let ph = dm[1]; const w = ph.split(' '); const cutAt = w.findLastIndex(x => /(를|을|에게|로)$/.test(x)); o.언제까지 = w.slice(cutAt + 1).join(' '); rest = (w.slice(0, cutAt + 1).join(' ') + ' ' + rest.slice(dm[0].length)).trim(); }
   let act = rest.replace(/(별지\s*제\s*\d+\s*호\s*서식)으로/, '($1)').replace(/\s*(?:으로|로)\s*(제출|내)/, ' $1');
@@ -236,7 +246,9 @@ function parseSentence(raw) {
 const CARD_KEYS = [['누가', '적용 대상', '예: 화학사고예방관리계획서 제출 대상 사업장'], ['언제', '의무가 생기는 경우', '예: 취급시설 용량이 늘어나거나, 새 시설을 설치하거나, 위험이 증가하는 변경을 할 때'], ['무엇을', '해야 할 일 (제출처·서식 포함)', '예: 변경된 계획서를 화학물질안전원장에게 제출 (별지 제32호서식)'], ['언제까지', '기한', '예: 변경이 끝나기 30일 전까지 / 통지를 받은 날부터 60일 이내 / 5년마다'], ['예외', '예외·주의 (해석으로 연결)', '예: 계획서 범위 안의 일시적 재고 증가는 해당 없음 (질의회신)']];
 function newCard(ids = []) {
   const d = blank(); d.카드 = { 문장: '' }; d.근거 = [...ids]; d.이름 = '';
-  if (ids.length) { const h = heuristicDraft(ids); const ph = ids.map(id => ART.find(x => x.id === id)?.a.내용 || '').join(' ');
+  const rec = recOf(ids);
+  if (ids.length && rec.length === ids.length) { const keep = A.seq; const h = heuristicDraft(ids); A.seq = keep; d.카드 = { 문장: rec.map(r => r.문장).join('\n') }; d.추천 = { 출처: '추천 문장', 유형: [...new Set(rec.map(r => r.유형))].join('·'), 메모: rec.map(r => r.메모).filter(Boolean).join(' / ') }; d.출처고시 = h.출처고시; d.의무분류 = h.의무분류; d.변환 = null; return d; }
+  if (ids.length) { const keep = A.seq; const h = heuristicDraft(ids); A.seq = keep; d.추천 = { 출처: '원문 정리', 유형: '', 메모: '' }; const ph = ids.map(id => ART.find(x => x.id === id)?.a.내용 || '').join(' ');
     const act = plain(h.결과.조치 || '');
     const 언제 = h.조건.항목.filter(c => !c.모두).map(c => cut(plain(c.설명.replace(/…$/, '')))).join(', 또는 '), 기한 = dueText(ph);
     const 무엇 = [act.replace(/\s*제출$/, ''), h.결과.제출처 && !act.includes(h.결과.제출처) && `${h.결과.제출처}에게`].filter(Boolean).join(' ');
@@ -247,7 +259,7 @@ function newCard(ids = []) {
   d.변환 = null; return d;
 }
 // 쉬운 말 → 사전 필드 (동의어 정리 후 키워드·필드 이름 토큰 점수, 형식 가중)
-const SYN = [[/늘어나|늘리|커지|많아지|증대/g, '증가'], [/(^|\s)새(로|롭게)?\s/g, '$1신규 새로운 '], [/추가되|추가될|추가하/g, '추가'], [/바뀌|바꾸/g, '변경'], [/옮기/g, '이전'], [/끝나는 날|완료일|완료 예정일|완료예정일/g, '변경완료 예정일']];
+const SYN = [[/늘어나|늘리|커지|많아지|높아지|증대/g, '증가'], [/넓어지/g, '확대'], [/(^|\s)새(로|롭게)?\s/g, '$1신규 새로운 '], [/처음으로?\s/g, '신규 '], [/추가되|추가될|추가하/g, '추가'], [/바뀌|바꾸/g, '변경'], [/옮기/g, '이전'], [/끝나는 날|완료일|완료 예정일|완료예정일/g, '변경완료 예정일']];
 const STOP = new Set(['여부', '받음', '있는', '대상', '확인', '라벨에']), GEN = new Set(['유해화학물질', '화학물질', '취급시설', '취급', '시설', '사업장', '물질']);
 function matchCard(text, want) {
   let t = ' ' + text + ' '; SYN.forEach(([re, to]) => { t = t.replace(re, to); }); const n = t.replace(/\s+/g, '');
@@ -278,9 +290,10 @@ function compileCardHeur(d) {
   d.유형 = !c.언제.trim() && items.length >= 3 ? '체크리스트' : '조건판정';
   // 조건: '거나', '또는', ',' 로 나눔
   const parts = c.조건목록?.length ? c.조건목록 : c.언제.replace(/(할 때|하는 경우|인 경우|경우|때)\s*$/, '').split(/\s*(?:하거나|이거나|거나|또는|,|，)\s*/).map(s => s.trim()).filter(s => s.length > 1);
+  if (!c.조건목록?.length && /(?:하고|이고)\s/.test(c.언제) && !/거나|또는/.test(c.언제)) { parts.splice(0, parts.length, ...c.언제.split(/\s*(?:하고|이고)\s+/).map(x => x.trim()).filter(x => x.length > 1)); c.모두 = true; }
   d.조건.mode = c.모두 || /모두|그리고|동시에/.test(c.언제) ? 'all' : 'any';
   const seen = {}; const unknown = [];
-  d.조건.항목 = parts.map(t => { const mf = matchCard(t, '예/아니오'); let f = mf ? mf.필드 : cslug(t); if (!mf) unknown.push(f); seen[f] = (seen[f] || 0) + 1; if (seen[f] > 1) f += '_' + seen[f]; return { 필드: f, 설명: t, 근거: d.근거[0] || '' }; });
+  d.조건.항목 = []; parts.forEach(t => { const mf = matchCard(t, '예/아니오'); const f = mf ? mf.필드 : cslug(t); const ex = d.조건.항목.find(x => x.필드 === f); if (ex) { ex.설명 += ' / ' + t; return; } if (!mf) unknown.push(f); d.조건.항목.push({ 필드: f, 설명: t, 근거: d.근거[0] || '' }); });
   // 결과
   let m; d.결과.조치 = c.무엇을.replace(/\([^)]*\)/g, '').replace(/→\s*/, '').replace(/(?:관할\s*)?[가-힣]+(?:원장|장관|청장|시장|군수|구청장|지사)에게\s*/, '').replace(/[:：].*$/, '').trim();
   d.결과.제출처 = (c.무엇을.match(/((?:관할\s*)?[가-힣]+(?:원장|장관|청장|시장|군수|구청장|지사))에게/) || [])[1] || '';
@@ -296,7 +309,7 @@ function compileCardHeur(d) {
   if (!k.기준필드) k.근거 = '';
   if (k.기준필드 && !fieldOf(k.기준필드)) unknown.push(k.기준필드);
   // 이름·설명·의무
-  if (!d.이름) d.이름 = d.결과.조치 ? (d.결과.조치.length < 6 && parts[0] ? cslug(parts[0]).replace(/_/g, ' ') + ' ' : '') + d.결과.조치.slice(0, 40) : '자연어 규칙';
+  if (!d.이름) d.이름 = d.유형 === '체크리스트' ? d.결과.조치.replace(/^.+?(?:은|는)\s+/, '').slice(0, 40) : d.결과.조치 ? (d.결과.조치.length < 6 && parts[0] ? cslug(parts[0]).replace(/_/g, ' ') + ' ' : '') + d.결과.조치.slice(0, 40) : '자연어 규칙';
   d.설명 = [c.누가 && `대상: ${c.누가}`, c.언제 && `${c.언제} →`, c.무엇을, c.언제까지 && `(${c.언제까지})`].filter(Boolean).join(' ');
   const hit = OBL_KW.find(([re]) => re.test(all)); if (hit) d.의무분류 = hit[1];
   d.쟁점 = [{ t: 'AI가 자연어 문장을 규칙으로 변환 — 조건·기한·읽는 데이터를 문장과 대조', ok: false }];
@@ -330,10 +343,11 @@ function cardHtml(d, ro) {
   const k = d.결과.기한, due = [k.년 && `${k.년}년`, k.개월 && `${k.개월}개월`, k.일수 !== '' && k.일수 != null && `${Math.abs(k.일수)}일${k.일수 < 0 ? ' 전' : ''}`].filter(Boolean).join(' ');
   return `<div class="grid2" style="grid-template-columns:1fr 1fr;gap:12px">
     <div class="result" style="background:#fff;border-color:var(--blue)"><h3>✍️ 자연어로 쓰기 <span class="muted small">— 법 내용을 평소 말로</span></h3>
+      ${d.추천 ? `<div class="small" style="margin:-2px 0 6px;padding:6px 8px;background:#F3F7FB;border-radius:8px">💡 <b>${esc(d.추천.출처)}</b>${d.추천.유형 ? ` · <span class="pill ${RULEISH.includes(d.추천.유형) ? 'green' : 'orange'}" style="font-size:10px">${esc(d.추천.유형)}</span>` : ''} ${d.근거.length ? `<span class="muted">(${d.근거.map(artLab).map(esc).join(', ')})</span>` : ''}${d.추천.메모 ? `<div class="muted" style="margin-top:2px">${esc(d.추천.메모)}</div>` : ''}${d.추천.유형 && !d.추천.유형.split('·').some(t => RULEISH.includes(t)) ? '<div style="color:var(--orange);margin-top:2px">이 조문은 판정 규칙보다 정의·기준표로 두는 것이 맞습니다 — 변환은 참고용</div>' : ''}</div>` : ''}
       ${nl ? `<textarea data-b="카드.문장" placeholder="${esc('예: ' + EXAMPLE)}" style="width:100%;min-height:190px;font-size:14px;line-height:1.6" ${ro ? 'disabled' : ''}>${esc(c.문장)}</textarea>`
         : CARD_KEYS.map(([key, lab, ph]) => `<label class="field" style="width:100%;margin-bottom:6px"><span>${esc(key)} <span class="muted" style="font-weight:400">${esc(lab)}</span></span><textarea data-b="카드.${key}" placeholder="${esc(ph)}" style="width:100%;min-height:40px" ${ro ? 'disabled' : ''}>${esc(c[key])}</textarea></label>`).join('')}
       <div class="small muted">대상·조건·할 일·기한·예외(단, …)를 한두 문장으로 · 근거 조문은 아래 '변환된 규칙'에서 연결</div>
-      ${ro ? '' : `<div class="row" style="margin-top:6px"><button class="btn blue" data-act="compile">✨ AI로 규칙 변환 →</button>${nl && !c.문장 ? '<button class="btn ghost sm" data-act="example">예문 넣기</button>' : ''}<span class="small" data-stale ${stale ? '' : 'hidden'} style="color:var(--orange)">문장이 바뀌었습니다 — 다시 변환하세요</span></div>`}</div>
+      ${ro ? '' : `<div class="row" style="margin-top:6px"><button class="btn blue" data-act="compile">✨ AI로 규칙 변환 →</button>${nl && !c.문장 ? '<button class="btn ghost sm" data-act="example">예문 넣기</button>' : ''}${nl && d.근거.length ? '<button class="btn ghost sm" data-act="recommend">↺ 추천 문장 다시 넣기</button>' : ''}<span class="small" data-stale ${stale ? '' : 'hidden'} style="color:var(--orange)">문장이 바뀌었습니다 — 다시 변환하세요</span></div>`}</div>
     <div class="result" style="background:${d.변환 ? '#F6FBF8' : '#fff'}"><h3>AI가 이해한 내용 ${d.변환 ? `<span class="muted small">${esc(d.변환.방식)} · ${esc(d.변환.t)}</span>` : ''}</h3>
       ${d.변환 ? `<div class="kv" style="grid-template-columns:74px 1fr">
         ${u.누가 ? `<b>대상</b><span class="small">${esc(u.누가)}</span>` : ''}
@@ -437,6 +451,7 @@ function renderA2() {
       ${LAWS.filter(n => list.some(x => x.a.법령명 === n)).map(n => { const m = lawMeta(n); return `<div class="kxh">${esc(n)}<div class="small" style="font-weight:400;color:var(--sub)">${esc(m.공포번호 || '')}${m.공포일 ? ' · 공포 ' + esc(m.공포일) : ''}</div></div>` + list.filter(x => x.a.법령명 === n).map(x => `<div class="kxi ${UI.art === x.id ? 'on' : ''}" data-art="${x.id}"><input type="checkbox" data-pick="${x.id}" ${UI.artSel.includes(x.id) ? 'checked' : ''} title="초안에 함께 쓸 조문 선택"><div style="flex:1"><b class="small">${esc(x.lab)}</b><div class="muted small">${esc(x.a.제목 || '')}</div></div>${usedBy(x.id).length ? `<span class="pill green" style="font-size:10.5px;white-space:nowrap;align-self:center">규칙 ${usedBy(x.id).length}</span>` : ''}</div>`).join(''); }).join('') || '<p class="muted small">검색 결과가 없습니다.</p>'}</div>
       <div>${cur ? `<div class="result" style="background:#fff"><div class="row between"><h3 style="margin:0">${esc(cur.lab)} <span class="muted small">${esc(cur.a.제목 || '')}</span></h3><code>${esc(cur.id)}</code></div>
         <div class="small muted" style="margin:4px 0 8px">${esc(cur.a.법령명)} · 시행 ${esc(cur.a.시행일)}</div><div class="arttext">${esc(cur.a.내용)}</div>
+        ${REC[cur.id] ? `<div style="margin-top:8px;padding:8px 10px;background:#F1F8F4;border-radius:8px;border:1px solid #CFE7D8"><div class="small"><b>✍️ 쉬운 말로</b> <span class="pill ${RULEISH.includes(REC[cur.id].유형) ? 'green' : 'orange'}" style="font-size:10px">${esc(REC[cur.id].유형)}</span></div><div style="margin-top:4px">${esc(REC[cur.id].문장)}</div>${REC[cur.id].메모 ? `<div class="small muted" style="margin-top:3px">${esc(REC[cur.id].메모)}</div>` : ''}</div>` : ''}
         <div class="kv" style="margin-top:10px"><b>이 조문을 쓰는 규칙</b><span>${usedBy(cur.id).map(esc).join(', ') || '<span style="color:var(--red)">없음 — 규칙화 대상</span>'}</span></div></div>` : '<p class="muted">왼쪽에서 조문을 고르세요.</p>'}
         <div class="result" style="background:#fff;border-color:var(--blue)"><h3>AI 규칙 초안 만들기</h3><p class="small" style="margin:0 0 8px">선택한 조문 ${UI.artSel.length || (cur ? 1 : 0)}개: ${(UI.artSel.length ? UI.artSel : cur ? [cur.id] : []).map(id => `<span class="chip">${esc(artLab(id))}</span>`).join('') || '-'}</p>
           <div class="row"><button class="btn blue" id="draftBtn" ${UI.artSel.length || cur ? '' : 'disabled'}>✨ AI 규칙 초안</button><button class="btn blue" id="cardBtn" ${UI.artSel.length || cur ? '' : 'disabled'} style="background:#2E7D5B">✍️ 자연어로 작성</button><button class="btn ghost" id="blankBtn">빈 규칙으로 시작</button><select id="loadRule"><option value="">기존 규칙 불러와 새 버전 작성</option>${B.규칙.filter(r => ['조건판정', '체크리스트'].includes(r.유형)).map(r => `<option value="${r.id}">${esc(r.id + ' ' + r.이름)}</option>`).join('')}</select></div></div></div></div></div>`;
@@ -541,6 +556,7 @@ $('a3').addEventListener('click', e => {
     saveA(); return renderA3();
   }
   const act = e.target.closest('[data-act]'); if (!act) return;
+  if (act.dataset.act === 'recommend') { const rec = recOf(d.근거); if (rec.length === d.근거.length) { d.카드.문장 = rec.map(r => r.문장).join('\n'); saveA(); return renderA3(); } if (aiOn()) { act.disabled = true; act.textContent = '생성형 AI가 문장을 쓰는 중…'; aiRecommend(d.근거).then(t => { d.카드.문장 = t; d.추천 = { 출처: '생성형 AI 추천', 유형: '', 메모: '' }; saveA(); renderA3(); }).catch(() => { toast('생성형 AI 추천 실패'); renderA3(); }); return; } const n = newCard(d.근거); d.카드.문장 = n.카드.문장; saveA(); return renderA3(); }
   if (act.dataset.act === 'example') { d.카드.문장 = EXAMPLE; saveA(); return renderA3(); }
   if (act.dataset.act === 'compile') { const ta = document.querySelector('#a3 textarea[data-b="카드.문장"]'); if (ta) d.카드.문장 = ta.value; if (!Object.values(d.카드).join('').trim()) return toast('문장을 먼저 쓰세요'); act.disabled = true; act.textContent = aiOn() ? '생성형 AI가 변환 중…' : '변환 중…'; compileCard(d).then(() => { d.이력.unshift({ t: nowStr(), who: ME(), 상태: d.상태, 의견: `자연어 → 규칙 변환 (${d.변환.방식})` }); logA(`${d.id} 자연어 → 규칙 변환`); saveA(); renderA3(); }); return; }
   if (act.dataset.act === 'recase') { e.preventDefault(); autoCases(d); d.이력.unshift({ t: nowStr(), who: ME(), 상태: d.상태, 의견: '검증 사례 기대값 재생성' }); saveA(); return renderA3(); }
@@ -561,7 +577,8 @@ $('a2').addEventListener('click', async e => {
     const ids = UI.artSel.length ? UI.artSel : [UI.art]; e.target.disabled = true; e.target.textContent = aiOn() ? '생성형 AI가 초안을 쓰는 중…' : '원문에서 추출 중…';
     const d = await aiDraft(ids); autoReg(d); A.rules.unshift(d); UI.sel = d.key; UI.artSel = []; logA(`${ids.map(artLab).join(', ')} → AI 초안 ${d.id}`); saveA(); toast(`${d.id} 초안을 만들었습니다 — 원문과 대조해 고치세요`); return showTab('a3');
   }
-  if (e.target.id === 'cardBtn') { const ids = UI.artSel.length ? UI.artSel : [UI.art]; const d = newCard(ids); A.rules.unshift(d); UI.sel = d.key; UI.artSel = []; logA(`${ids.map(artLab).join(', ')} → 지식 카드 ${d.id}`); saveA(); toast('조문을 문장 초안으로 바꿨습니다 — 평소 말로 다듬고 "AI로 규칙 변환"을 누르세요'); return showTab('a3'); }
+  if (e.target.id === 'cardBtn') { const ids = UI.artSel.length ? UI.artSel : [UI.art]; const d = newCard(ids);
+    if (d.추천?.출처 === '원문 정리' && aiOn()) { e.target.disabled = true; e.target.textContent = '생성형 AI가 문장을 쓰는 중…'; try { d.카드 = { 문장: await aiRecommend(ids) }; d.추천 = { 출처: '생성형 AI 추천', 유형: '', 메모: '' }; } catch (err) { toast('생성형 AI 추천 실패 — 원문 정리본을 넣었습니다'); } } A.rules.unshift(d); UI.sel = d.key; UI.artSel = []; logA(`${ids.map(artLab).join(', ')} → 지식 카드 ${d.id}`); saveA(); toast('조문을 문장 초안으로 바꿨습니다 — 평소 말로 다듬고 "AI로 규칙 변환"을 누르세요'); return showTab('a3'); }
   if (e.target.id === 'blankBtn') { const d = blank(); if (UI.art) d.근거 = [UI.art]; A.rules.unshift(d); UI.sel = d.key; saveA(); return showTab('a3'); }
 });
 $('a2').addEventListener('change', e => {
