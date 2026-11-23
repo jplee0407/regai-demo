@@ -924,6 +924,10 @@ function ruleBody(r, v, edit) {
     return `<table style="max-width:640px"><tr><th>순서</th><th>물질 구간(하나라도)</th><th>추가 조건</th><th>판정</th></tr>${v.결정.map((d, i) => `<tr><td>${i + 1}</td><td><span class="pill navy">${esc(d.구간)}</span></td><td>${d.조건 ? esc(d.조건.replace(/_/g, ' ')) : '-'}</td><td><b>${esc(d.결과)}</b><div class="muted small">${esc(d.설명 || '')}</div></td></tr>`).join('')}<tr><td>-</td><td colspan="2">그 외</td><td><b>${esc(v.기본)}</b></td></tr></table>
       <p class="muted small">물질별 구간은 <a href="#" data-node="R-QTY-1">R-QTY-1</a> 결과를 사용합니다.</p>`;
   }
+  if (r.유형 === '기준표') {
+    const cols = v.열 || [];
+    return `<b>기준표 <span class="muted small">— 위에서부터 처음 맞는 행 적용 (규칙 저작 도구에서 작성)</span></b><table style="margin:6px 0"><tr>${cols.map(c => `<th>${esc(c.이름)} <span class="small" style="font-weight:400">(${esc(c.종류)})</span></th>`).join('')}</tr>${(v.행 || []).map(rw => `<tr>${cols.map(c => `<td>${esc(rw[c.이름] ?? '')}</td>`).join('')}</tr>`).join('')}</table>${v.결과?.조치 ? `<div class="kv"><b>조치</b><span>${esc(v.결과.조치)}</span></div>` : ''}`;
+  }
   if (r.유형 === '체크리스트') {
     return `<b>필수 항목 ${v.필수항목.length}개</b> <span class="muted small">(라벨 생성 · 현장 사진 판독 · 표시 점검에서 함께 사용)</span>
       <div class="chips">${v.필수항목.map((t, i) => `<span class="chip" style="font-size:13px">${i + 1}. <b>${esc(t)}</b>${edit ? ` <a href="#" data-act="item-del" data-v="${i}" style="color:var(--red);text-decoration:none">✕</a>` : ''}</span>`).join('')}</div>
@@ -1615,6 +1619,8 @@ function rvCases(r) {
     if (r.유형 === '수량판정') act = qtyJudge(K, c.입력, d);
     else if (r.유형 === '사업장판정') act = siteGroup(K, SITES.find(x => x.id === c.입력.사업장) || SITES[0], d);
     else if (r.유형 === '조건판정') { const res = judgeChange(K, c.입력, base()).find(x => x.규칙 === r.id); act = res ? { 기한: res.기한, 대상: true } : { 대상: false }; }
+    else if (r.유형 === '체크리스트') { const have = (c.입력.항목 || []).map(t => t.replace(/\s/g, '')); act = { 누락: (v.필수항목 || []).filter(t => !have.includes(String(t).replace(/\s/g, ''))).length }; }
+    else if (r.유형 === '기준표') { const conds = (v.열 || []).filter(x => x.종류 === '조건'), row = (v.행 || []).find(rw => conds.every(cl => !rw[cl.이름] || rw[cl.이름] === '*' || rw[cl.이름] === '기타' || String(rw[cl.이름]) === String(c.입력[cl.이름] ?? ''))); act = row ? Object.fromEntries((v.열 || []).filter(x => x.종류 === '결과').map(o => [o.이름, row[o.이름]])) : {}; }
     else act = {};
     const ok = Object.entries(c.기대).every(([k, v]) => String(v) === String(act[k]));
     return { c, act, ok };
