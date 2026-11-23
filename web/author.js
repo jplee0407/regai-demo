@@ -50,17 +50,17 @@ const D = () => A.rules.find(r => r.key === UI.sel);
 // 초안 → 저장소 규칙 형식
 function toRule(d) {
   const base = d.base ? B.규칙.find(r => r.id === d.base) : null;
-  const v = { 버전: base ? Math.max(...base.버전.map(x => x.버전)) + 1 : 1, 시행일: d.시행일, 폐지일: null, 승인: d.상태 === '확정' || d.상태 === '배포됨' ? `${d.검토자} 확정 (${(d.확정일 || today()).slice(0, 10)})` : `검토 대기 (${d.AI ? 'AI 초안' : '작성'})`,
+  const v = { 버전: d.baseVer ? d.baseVer + 1 : base ? Math.max(...base.버전.map(x => x.버전)) + 1 : 1, 시행일: d.시행일, 폐지일: null, 승인: d.상태 === '확정' || d.상태 === '배포됨' ? `${d.검토자} 확정 (${(d.확정일 || today()).slice(0, 10)})` : `검토 대기 (${d.AI ? 'AI 초안' : '작성'})`,
     근거: [...new Set([...d.근거, ...d.조건.항목.map(c => c.근거), d.결과.기한?.근거, ...d.필수항목.map(i => i.근거), ...d.표.행.map(r => r._근거)].filter(Boolean))],
     검토: { 작성: d.작성자, 작성일: d.이력[0]?.t?.slice(0, 10), 상태: d.상태 === '배포됨' ? '확정' : d.상태, 요약: d.설명, 쟁점: d.쟁점.map(x => x.t), 사례: d.사례.map(c => ({ 설명: c.설명, 입력: c.입력, 기대: c.기대 })) } };
   if (d.유형 === '조건판정') {
-    v.조건 = { [d.조건.mode]: d.조건.항목.map(c => ({ 필드: c.필드, 같음: true, 설명: c.설명, 근거: c.근거 || undefined })) };
+    v.조건 = { [d.조건.mode]: d.조건.항목.map(c => c.모두 ? { all: c.모두 } : ({ 필드: c.필드, 같음: true, 설명: c.설명, 근거: c.근거 || undefined })) };
     const k = d.결과.기한, due = k.기준필드 ? Object.fromEntries(Object.entries({ 기준필드: k.기준필드, 일수: num(k.일수), 개월: num(k.개월), 년: num(k.년), 근거: k.근거 || undefined }).filter(([, x]) => x !== undefined && x !== null && x !== '')) : undefined;
     v.결과 = Object.fromEntries(Object.entries({ 조치: d.결과.조치, 제출처: d.결과.제출처, 서식: d.결과.서식, 기한: due }).filter(([, x]) => x));
   }
   if (d.유형 === '체크리스트') { v.필수항목 = d.필수항목.map(i => i.이름); v.결과 = { 조치: d.결과.조치 || '미충족 항목 보완' }; }
   if (d.유형 === '기준표') { v.열 = d.표.열; v.행 = d.표.행.map(r => { const { _근거, ...rest } = r; return rest; }); v.결과 = { 조치: d.결과.조치 }; }
-  return { id: d.id, 이름: d.이름, 유형: d.유형, 의무분류: d.의무분류, 연관분류: d.연관분류, 대상: '저작도구', 설명: d.설명, ...(d.출처고시 ? { 출처고시: d.출처고시 } : {}), 버전: [v] };
+  return { id: d.id, 이름: d.이름, 유형: d.유형, 의무분류: d.의무분류, 연관분류: d.연관분류, 대상: d.대상 || '저작도구', 설명: d.설명, ...(d.출처고시 ? { 출처고시: d.출처고시 } : {}), 버전: [v] };
 }
 function toInt(d) { return { id: d.id.replace(/^R-/, 'I-'), ...d.해석, 확인자: d.검토자 || d.작성자, 상태: d.상태 === '확정' || d.상태 === '배포됨' ? '유효' : '검토 중', 일자: today(), 관련조문: d.해석.관련조문.length ? d.해석.관련조문 : d.근거 }; }
 const num = x => x === '' || x == null ? undefined : Number(x);
@@ -71,8 +71,8 @@ function toYaml(o, ind = '') {
 // 기존 확정 규칙 불러오기 → 새 버전 초안
 function fromRule(r) {
   const d = blank(r.유형 === '체크리스트' ? '체크리스트' : '조건판정'); const v = r.버전.find(x => !x.폐지일) || r.버전[r.버전.length - 1];
-  Object.assign(d, { id: r.id, base: r.id, 이름: r.이름, 설명: r.설명, 의무분류: r.의무분류 || 'C02-3', 연관분류: r.연관분류 || [], 출처고시: r.출처고시 || '', 근거: [...(v.근거 || [])], 시행일: v.시행일 > today() ? v.시행일 : today() });
-  if (r.유형 === '조건판정') { const mode = v.조건.any ? 'any' : 'all'; d.조건 = { mode, 항목: v.조건[mode].flatMap(c => c.all ? c.all : [c]).map(c => ({ 필드: c.필드, 설명: c.설명, 근거: c.근거 || '' })) }; const k = v.결과.기한 || {}; d.결과 = { 조치: v.결과.조치, 제출처: v.결과.제출처 || '', 서식: v.결과.서식 || '', 기한: { 기준필드: k.기준필드 || '', 일수: k.일수 ?? '', 개월: k.개월 ?? '', 년: k.년 ?? '', 근거: k.근거 || '' } }; }
+  Object.assign(d, { 대상: r.대상, id: r.id, base: r.id, baseVer: Math.max(...r.버전.map(x => x.버전)), 이름: r.이름, 설명: r.설명, 의무분류: r.의무분류 || 'C02-3', 연관분류: r.연관분류 || [], 출처고시: r.출처고시 || '', 근거: [...(v.근거 || [])], 시행일: v.시행일 > today() ? v.시행일 : today() });
+  if (r.유형 === '조건판정') { const mode = v.조건.any ? 'any' : 'all'; d.조건 = { mode, 항목: v.조건[mode].map(c => c.all ? { 필드: c.all.map(x => x.필드).join('+'), 설명: c.all.map(x => x.설명).join(' + '), 근거: c.all[0].근거 || '', 모두: clone(c.all) } : { 필드: c.필드, 설명: c.설명, 근거: c.근거 || '' }) }; const k = v.결과.기한 || {}; d.결과 = { 조치: v.결과.조치, 제출처: v.결과.제출처 || '', 서식: v.결과.서식 || '', 기한: { 기준필드: k.기준필드 || '', 일수: k.일수 ?? '', 개월: k.개월 ?? '', 년: k.년 ?? '', 근거: k.근거 || '' } }; }
   if (r.유형 === '체크리스트') { d.필수항목 = v.필수항목.map(n => ({ 이름: n, 근거: v.근거[0] || '' })); d.결과.조치 = v.결과?.조치 || ''; }
   d.사례 = (v.검토?.사례 || []).map(c => ({ ...c }));
   if (!d.사례.length) autoCases(d);
@@ -125,7 +125,7 @@ function heuristicDraft(ids) {
 }
 function autoCases(d) {
   if (d.유형 === '조건판정' && d.조건.항목.length) {
-    const k = d.결과.기한, f0 = d.조건.항목[0].필드, inp = { [f0]: true };
+    const k = d.결과.기한, c0 = d.조건.항목[0], inp = c0.모두 ? Object.fromEntries(c0.모두.map(x => [x.필드, true])) : { [c0.필드]: true };
     if (k.기준필드) inp[k.기준필드] = '2027-03-31';
     const due = k.기준필드 ? calcDue({ 기준필드: k.기준필드, 일수: num(k.일수), 개월: num(k.개월), 년: num(k.년) }, inp) : undefined;
     d.사례 = [{ 설명: `${d.조건.항목[0].설명.slice(0, 20)} → 대상`, 입력: inp, 기대: due ? { 대상: true, 기한: due } : { 대상: true } },
@@ -198,13 +198,53 @@ function renderA1() {
   const covered = c => [...B.규칙.filter(r => r.의무분류 === c).map(r => r.id), ...A.rules.filter(r => r.유형 !== '해석' && r.의무분류 === c && ['확정', '배포됨'].includes(r.상태)).map(r => r.id)];
   const drafts = c => A.rules.filter(r => r.의무분류 === c && !['확정', '배포됨', '반려'].includes(r.상태));
   const subsCov = SUBS.filter(s => covered(s.코드).length).length;
-  $('a1').innerHTML = `<div class="grid6">${kpi(`${subsCov}/${SUBS.length}`, '규칙이 있는 세부 업무')}${kpi(cnt('작성 중'), '작성 중')}${kpi(cnt('검토 요청'), '검토 요청', cnt('검토 요청'))}${kpi(cnt('수정 요청'), '수정 요청', cnt('수정 요청'))}${kpi(cnt('확정'), '확정 (배포 대기)', cnt('확정'))}${kpi(cnt('배포됨'), '배포됨')}</div>
+  $('a1').innerHTML = `${UI.k ? knowCard(UI.k) : ''}<div class="grid6">${kpi(`${subsCov}/${SUBS.length}`, '규칙이 있는 세부 업무')}${kpi(cnt('작성 중'), '작성 중')}${kpi(cnt('검토 요청'), '검토 요청', cnt('검토 요청'))}${kpi(cnt('수정 요청'), '수정 요청', cnt('수정 요청'))}${kpi(cnt('확정'), '확정 (배포 대기)', cnt('확정'))}${kpi(cnt('배포됨'), '배포됨')}</div>
     <div class="card"><div class="row between"><div><h2 style="margin:0">의무별 지식 현황</h2><p class="desc" style="margin:2px 0 0">판정형 세부 업무에 규칙이 없으면 빨간색 · 작성 중인 초안을 누르면 ③에서 열림</p></div><button class="btn blue" data-go="a2">조문에서 규칙 만들기 →</button></div>
       <div class="scroll"><table><tr><th>의무</th><th>세부 업무</th><th>유형</th><th>규칙 (기존·확정)</th><th>작성 중 초안</th></tr>${OBL.map(o => (o.세부 || []).map((s, i) => { const cv = covered(s.코드), dr = drafts(s.코드);
         return `<tr>${i === 0 ? `<td rowspan="${o.세부.length}" style="vertical-align:top"><b>${esc(o.코드)}</b><br><span class="small">${esc(o.이름)}</span></td>` : ''}<td class="small"><b>${esc(s.코드)}</b> ${esc(s.이름)}</td><td class="small">${esc(s.유형 || '')}</td>
-          <td class="small">${cv.length ? cv.map(esc).join(', ') : `<span style="color:${s.유형 === '판정형' ? 'var(--red)' : 'var(--sub)'}">없음</span>`}</td><td class="small">${dr.map(r => `<a href="#" data-open="${r.key}">${esc(r.id)}</a> ${pill(r.상태)}`).join(' ') || '-'}</td></tr>`; }).join('')).join('')}</table></div></div>
+          <td class="small">${cv.length ? [...new Set(cv)].map(id => `<a href="#" data-k="${esc(id)}" style="font-weight:600">${esc(id)}</a>`).join(', ') : `<span style="color:${s.유형 === '판정형' ? 'var(--red)' : 'var(--sub)'}">없음</span>`}</td><td class="small">${dr.map(r => `<a href="#" data-open="${r.key}">${esc(r.id)}</a> ${pill(r.상태)}`).join(' ') || '-'}</td></tr>`; }).join('')).join('')}</table></div></div>
     <div class="card"><h2>작업 이력</h2>${A.log.slice(0, 15).map(l => `<div class="small">${esc(l.t)} · ${esc(l.who)} · ${esc(l.msg)}</div>`).join('') || '<p class="muted small">아직 없습니다.</p>'}</div>`;
 }
+
+// ① 지식 상세 (ID 클릭) — 확인 후 수정(새 버전 초안)
+function knowOf(id) {
+  const au = A.rules.filter(r => r.id === id && ['확정', '배포됨'].includes(r.상태)).sort((x, y) => (y.확정일 || '').localeCompare(x.확정일 || ''))[0];
+  if (au) return { src: '저작', d: au, r: au.유형 === '해석' ? null : toRule(au) };
+  const r = B.규칙.find(x => x.id === id); return r ? { src: '저장소', r } : null;
+}
+function knowCard(id) {
+  const k = knowOf(id); if (!k) return '';
+  const r = k.r, v = r ? (r.버전.find(x => !x.폐지일) || r.버전[r.버전.length - 1]) : null;
+  const editable = r && (['조건판정', '체크리스트', '기준표'].includes(r.유형));
+  const open = A.rules.find(x => x.id === id && ['작성 중', '수정 요청', '검토 요청'].includes(x.상태));
+  let body = '';
+  if (r?.유형 === '조건판정') { const mode = v.조건.any ? 'any' : 'all'; body = `<b>IF ${mode === 'any' ? '하나라도 해당' : '모두 해당'}</b><ul style="margin:4px 0">${v.조건[mode].flatMap(c => c.all ? c.all : [c]).map(c => `<li>${esc(c.설명)} <code class="small">${esc(c.필드)}</code> <span class="small muted">${esc(artLab(c.근거 || ''))}</span></li>`).join('')}</ul><b>THEN</b> ${esc(v.결과.조치)}${v.결과.제출처 ? ' · ' + esc(v.결과.제출처) : ''}${v.결과.서식 ? ' · ' + esc(v.결과.서식) : ''}${v.결과.기한 ? ` · 기한: ${esc(v.결과.기한.기준필드)} ${[v.결과.기한.년 && v.결과.기한.년 + '년', v.결과.기한.개월 && v.결과.기한.개월 + '개월', v.결과.기한.일수 && v.결과.기한.일수 + '일'].filter(Boolean).join(' ')}` : ''}`; }
+  else if (r?.유형 === '체크리스트') body = `<b>필수 항목 ${v.필수항목.length}개</b><div class="chips">${v.필수항목.map((t, i) => `<span class="chip">${i + 1}. ${esc(t)}</span>`).join('')}</div>`;
+  else if (r?.유형 === '기준표') body = `<table><tr>${(v.열 || []).map(c => `<th>${esc(c.이름)}</th>`).join('')}</tr>${(v.행 || []).map(rw => `<tr>${(v.열 || []).map(c => `<td>${esc(rw[c.이름] ?? '')}</td>`).join('')}</tr>`).join('')}</table>`;
+  else if (r?.유형 === '결정표') body = `<table><tr><th>사업장 군</th><th>위험도</th><th>주기(년)</th></tr>${v.결정표.map(t => `<tr><td>${esc(t.사업장군)}</td><td>${esc(t.위험도 || '전체')}</td><td>${t.주기_년}</td></tr>`).join('')}</table>`;
+  else if (r) body = `<p class="small" style="margin:0">${esc(r.설명)}</p>`;
+  return `<div class="card" id="kcard" style="border:2px solid var(--blue)"><div class="row between"><h2 style="margin:0">${esc(id)} ${esc(r?.이름 || k.d?.이름 || '')} <span class="pill gray">${esc(r?.유형 || '해석')}</span> <span class="pill ${k.src === '저작' ? 'navy' : 'line'}">${k.src === '저작' ? '저작 도구 · ' + esc(k.d.상태) : '저장소 규칙'}</span></h2>
+      <span class="row">${open ? `<button class="btn blue sm" data-kopen="${open.key}">작성 중인 초안 열기 (${esc(open.상태)})</button>` : editable ? `<button class="btn blue sm" data-kedit="${esc(id)}">✎ 수정 (새 버전 v${v.버전 + 1} 작성)</button>` : `<a class="btn ghost sm" href="index.html">시연 화면 ②에서 수정 ↗</a>`}<button class="btn ghost sm" data-kclose="1">닫기</button></span></div>
+    <div class="kv" style="margin-top:8px"><b>의무</b><span>${esc(oblName(r?.의무분류))}</span><b>현재 버전</b><span>v${v?.버전} · 시행 ${esc(v?.시행일)} · ${esc(v?.승인 || '')}</span><b>설명</b><span>${esc(r?.설명 || '')}</span>${r?.출처고시 ? `<b>출처</b><span>${esc(r.출처고시)}</span>` : ''}</div>
+    <div class="result" style="background:#fff">${body}</div>
+    <details><summary class="small">근거 원문 (${(v?.근거 || []).length})</summary>${(v?.근거 || []).map(cid => { const x = ART.find(y => y.id === cid); return x ? `<div class="cite"><b>${esc(x.lab)}</b> <span class="muted small">${esc(x.a.법령명)}</span><br>${esc(x.a.내용)}</div>` : ''; }).join('')}</details>
+    ${(v?.검토?.쟁점 || []).length ? `<details><summary class="small">쟁점 ${(v.검토.쟁점).length}</summary><ul class="small">${v.검토.쟁점.map(t => `<li>${esc(t)}</li>`).join('')}</ul></details>` : ''}
+    ${r?.버전.length > 1 ? `<details><summary class="small">버전 이력 ${r.버전.length}</summary>${r.버전.map(x => `<div class="small">v${x.버전} · 시행 ${esc(x.시행일)}${x.폐지일 ? ' ~ ' + esc(x.폐지일) : ''} · ${esc(x.승인 || '')}</div>`).join('')}</details>` : ''}
+    ${!editable && r ? '<p class="small muted" style="margin:6px 0 0">이 유형(결정표·수량판정·사업장판정)은 전용 화면이 있어 시연 화면 ② 지식·규칙 관리에서 수정합니다.</p>' : ''}</div>`;
+}
+function editFromKnow(id) {
+  const k = knowOf(id);
+  let d;
+  if (k.src === '저작') { const src = k.d; d = clone(src); A.seq++; Object.assign(d, { key: 'D' + A.seq, base: src.id, baseVer: k.r.버전[0].버전, 상태: '작성 중', AI: false, 검토자: '', 확정일: null, 작성자: ME(), 시행일: src.시행일 > today() ? src.시행일 : today(), 이력: [{ t: nowStr(), who: ME(), 상태: '작성 중', 의견: `${id} v${k.r.버전[0].버전} 불러옴` }] }); d.쟁점.forEach(x => { x.ok = false; }); }
+  else d = fromRule(k.r);
+  A.rules.unshift(d); UI.sel = d.key; UI.k = null; logA(`${id} 불러와 새 버전 작성`); saveA(); showTab('a3');
+}
+$('a1').addEventListener('click', e => {
+  const kk = e.target.closest('[data-k]'); if (kk) { e.preventDefault(); UI.k = kk.dataset.k; renderA1(); return $('kcard')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  if (e.target.closest('[data-kclose]')) { UI.k = null; return renderA1(); }
+  const ke = e.target.closest('[data-kedit]'); if (ke) return editFromKnow(ke.dataset.kedit);
+  const ko = e.target.closest('[data-kopen]'); if (ko) { UI.sel = ko.dataset.kopen; UI.rsel = ko.dataset.kopen; UI.k = null; const d = D(); return showTab(d?.상태 === '검토 요청' ? 'a4' : 'a3'); }
+});
 
 // ② 조문
 function renderA2() {
@@ -242,7 +282,7 @@ function editorHtml(d) {
   if (d.유형 === '조건판정') {
     body = `<div class="result" style="background:#fff"><div class="row between"><h3 style="margin:0"><span class="step"><b>IF</b></span> 조건</h3><span class="small">${['any', 'all'].map(m => `<label><input type="radio" name="mode" data-mode="${m}" ${d.조건.mode === m ? 'checked' : ''}> ${m === 'any' ? '하나라도 해당' : '모두 해당'}</label>`).join(' ')}</span></div>
       <div class="condrow small muted"><span>조건 (화면에 보이는 문구)</span><span>필드명 (입력 데이터 키)</span><span>근거 조문</span><span></span></div>
-      ${d.조건.항목.map((c, i) => `<div class="condrow"><input type="text" data-b="조건.항목.${i}.설명" value="${esc(c.설명)}"><input type="text" data-b="조건.항목.${i}.필드" value="${esc(c.필드)}">${citeSelB(`조건.항목.${i}.근거`, c.근거)}<a href="#" data-del="조건.항목.${i}" style="color:var(--red)">✕</a></div>`).join('')}
+      ${d.조건.항목.map((c, i) => c.모두 ? `<div class="condrow"><span class="small"><b>모두 해당:</b> ${esc(c.설명)}</span><span class="small muted">${esc(c.필드)}</span><span class="small muted">${esc(artLab(c.근거))}</span><a href="#" data-del="조건.항목.${i}" style="color:var(--red)">✕</a></div>` : `<div class="condrow"><input type="text" data-b="조건.항목.${i}.설명" value="${esc(c.설명)}"><input type="text" data-b="조건.항목.${i}.필드" value="${esc(c.필드)}">${citeSelB(`조건.항목.${i}.근거`, c.근거)}<a href="#" data-del="조건.항목.${i}" style="color:var(--red)">✕</a></div>`).join('')}
       <button class="btn ghost sm" data-add="cond">+ 조건 추가</button></div>
     <div class="result" style="background:#fff"><h3><span class="step"><b>→</b></span> THEN 결과</h3><div class="kv"><b>조치</b><span>${inp('결과.조치', d.결과.조치, 380, '예: 변경된 계획서 제출')}</span><b>제출처</b><span>${inp('결과.제출처', d.결과.제출처, 220, '예: 화학물질안전원장')}</span><b>서식</b><span>${inp('결과.서식', d.결과.서식, 220, '예: 별지 제32호서식')}</span>
       <b>기한</b><span class="row" style="gap:6px">${inp('결과.기한.기준필드', d.결과.기한.기준필드, 160, '기준일 필드 (예: 변경완료_예정일)')} <input type="number" data-b="결과.기한.일수" value="${esc(d.결과.기한.일수)}" placeholder="일" style="width:70px">일 <input type="number" data-b="결과.기한.개월" value="${esc(d.결과.기한.개월)}" style="width:60px">개월 <input type="number" data-b="결과.기한.년" value="${esc(d.결과.기한.년)}" style="width:60px">년 ${citeSelB('결과.기한.근거', d.결과.기한.근거)}</span></div>
@@ -304,11 +344,11 @@ $('a3').addEventListener('click', e => {
     if (k === 'cite') { const c = $('addCite').value; if (!c) return toast('연결할 조문을 고르세요'); if (d.근거.includes(c)) return toast('이미 연결된 조문입니다'); d.근거.push(c); }
     if (k === 'case') {
       if (d.유형 === '조건판정') {
-        const inpv = {}; document.querySelectorAll('[data-cf]').forEach(c => { if (c.checked) inpv[c.dataset.cf] = true; });
+        const inpv = {}; document.querySelectorAll('[data-cf]').forEach(c => { if (c.checked) c.dataset.cf.split('+').forEach(f => { inpv[f] = true; }); });
         if (d.결과.기한.기준필드 && $('cfDate')) inpv[d.결과.기한.기준필드] = $('cfDate').value;
         const exp = $('cfExp').value === '1'; const kk = d.결과.기한;
         const due = exp && kk.기준필드 ? calcDue({ 기준필드: kk.기준필드, 일수: num(kk.일수), 개월: num(kk.개월), 년: num(kk.년) }, inpv) : undefined;
-        const names = d.조건.항목.filter(c => inpv[c.필드]).map(c => c.설명.slice(0, 12));
+        const names = d.조건.항목.filter(c => c.필드.split('+').every(f => inpv[f])).map(c => c.설명.slice(0, 12));
         d.사례.push({ 설명: `${names.join('+') || '조건 없음'} → ${exp ? '대상' : '대상 아님'}`, 입력: inpv, 기대: exp ? (due ? { 대상: true, 기한: due } : { 대상: true }) : { 대상: false } });
       } else if (d.유형 === '체크리스트') { const n = Math.max(0, Math.min(d.필수항목.length, +$('cfMiss').value || 0)); d.사례.push({ 설명: `${n}개 항목 누락`, 입력: { 항목: d.필수항목.slice(n).map(i => i.이름) }, 기대: { 누락: n } }); }
       else if (d.유형 === '기준표') { const i0 = {}, o0 = {}; document.querySelectorAll('[data-cfin]').forEach(x => { if (x.value) i0[x.dataset.cfin] = x.value; }); document.querySelectorAll('[data-cfout]').forEach(x => { if (x.value) o0[x.dataset.cfout] = x.value; }); if (!Object.keys(o0).length) return toast('기대 결과를 입력하세요'); d.사례.push({ 설명: Object.values(i0).join('·') + ' → ' + Object.values(o0).join('·'), 입력: i0, 기대: o0 }); }
