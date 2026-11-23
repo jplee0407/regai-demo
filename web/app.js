@@ -49,6 +49,13 @@ function knowledge(apps = S.approvals) {
     if (a.종류 === '확인') continue;
     if (a.종류 === '수량기준') { (K.수량[a.CAS] ||= []).push({ 시행일: a.시행일, 하위: Number(a.값), 승인: a.승인자 }); continue; }
     if (a.종류 === '새규칙') { K.규칙.push(clone(a.값)); continue; }
+    if (a.종류 === '별표행') { // 저작 도구 '별표 표'에서 배포된 행 추가·수정·삭제 (시행일 기준으로 엔진이 적용)
+      if (K.규정수량표 === B.규정수량표) K.규정수량표 = { ...B.규정수량표, 별표2: B.규정수량표.별표2.slice(), 별표3: B.규정수량표.별표3.slice() };
+      const T = K.규정수량표[a.표]; if (!T) continue;
+      if (a.동작 === '추가') T.push({ ...a.행, 시행일: a.시행일 });
+      else if (T[a.idx]) T[a.idx] = a.동작 === '삭제' ? { ...T[a.idx], 폐지일: a.시행일 } : { ...T[a.idx], 개정: [...(T[a.idx].개정 || []), { 시행일: a.시행일, 값: a.값 }] };
+      continue;
+    }
     if (a.종류 === '의무편집') { const i = K.의무.findIndex(o => o.코드 === a.값.코드); if (i >= 0) K.의무[i] = clone(a.값); else K.의무.push(clone(a.값)); continue; }
     if (a.종류 === '규칙분류') { const r0 = K.규칙.find(x => x.id === a.규칙); if (r0) { r0.의무분류 = a.값.의무분류; r0.연관분류 = a.값.연관분류 || []; } continue; }
     if (a.종류 === '해석편집') { const i = K.해석.findIndex(g => g.id === a.값.id); if (i >= 0) K.해석[i] = clone(a.값); else K.해석.push(clone(a.값)); continue; }

@@ -1,6 +1,6 @@
 // 화관법 규칙 저작 도구 (시연) — 조문 → AI 초안 → 규칙 작성 → 검증 → 검토·확정 → 패키지 배포
 // 판정 엔진(engine.js)과 지식 묶음(bundle.json)은 시연 시스템과 공용. 저작 데이터는 이 브라우저 localStorage에만 저장.
-import { evalCond, calcDue, label, activeVersion } from './engine.js';
+import { evalCond, calcDue, label, activeVersion, qtyJudge } from './engine.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -381,7 +381,7 @@ function runCase(d, c) {
 
 // ---------------------------------------------------------------- 화면
 const UI = { tab: 'a1', sel: null, art: null, artSel: [], q: '', law: '' };
-function showTab(t) { UI.tab = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'].forEach(x => $(x).classList.toggle('hidden', x !== t)); render(); window.scrollTo({ top: 0 }); }
+function showTab(t) { UI.tab = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'].forEach(x => $(x).classList.toggle('hidden', x !== t)); render(); window.scrollTo({ top: 0 }); }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.t));
 const pill = s => `<span class="pill ${ST_CLR[s] || 'gray'}">${esc(s)}</span>`;
 const kpi = (v, l, a) => `<div class="kpi ${a ? 'alert' : ''}"><div class="v">${v}</div><div class="l">${l}</div></div>`;
@@ -393,7 +393,7 @@ function renderA1() {
   const drafts = c => A.rules.filter(r => r.의무분류 === c && !['확정', '배포됨', '반려'].includes(r.상태));
   const subsCov = SUBS.filter(s => covered(s.코드).length).length;
   $('a1').innerHTML = `${UI.k ? knowCard(UI.k) : ''}<div class="grid6">${kpi(`${subsCov}/${SUBS.length}`, '규칙이 있는 세부 업무')}${kpi(cnt('작성 중'), '작성 중')}${kpi(cnt('검토 요청'), '검토 요청', cnt('검토 요청'))}${kpi(cnt('수정 요청'), '수정 요청', cnt('수정 요청'))}${kpi(cnt('확정'), '확정 (배포 대기)', cnt('확정'))}${kpi(cnt('배포됨'), '배포됨')}</div>
-    <div class="card"><div class="row between"><div><h2 style="margin:0">의무별 지식 현황</h2><p class="desc" style="margin:2px 0 0">판정형 세부 업무에 규칙이 없으면 빨간색 · 작성 중인 초안을 누르면 ③에서 열림</p></div><button class="btn blue" data-go="a2">조문에서 규칙 만들기 →</button></div>
+    <div class="card"><div class="row between"><div><h2 style="margin:0">의무별 지식 현황</h2><p class="desc" style="margin:2px 0 0">판정형 세부 업무에 규칙이 없으면 빨간색 · 작성 중인 초안을 누르면 ④에서 열림</p></div><button class="btn blue" data-go="a2">조문에서 규칙 만들기 →</button></div>
       <div class="scroll"><table><tr><th>의무</th><th>세부 업무</th><th>유형</th><th>규칙 (기존·확정)</th><th>작성 중 초안</th></tr>${OBL.map(o => (o.세부 || []).map((s, i) => { const cv = covered(s.코드), dr = drafts(s.코드);
         return `<tr>${i === 0 ? `<td rowspan="${o.세부.length}" style="vertical-align:top"><b>${esc(o.코드)}</b><br><span class="small">${esc(o.이름)}</span></td>` : ''}<td class="small"><b>${esc(s.코드)}</b> ${esc(s.이름)}</td><td class="small">${esc(s.유형 || '')}</td>
           <td class="small">${cv.length ? [...new Set(cv)].map(id => `<a href="#" data-k="${esc(id)}" style="font-weight:600">${esc(id)}</a>`).join(', ') : `<span style="color:${s.유형 === '판정형' ? 'var(--red)' : 'var(--sub)'}">없음</span>`}</td><td class="small">${dr.map(r => `<a href="#" data-open="${r.key}">${esc(r.id)}</a> ${pill(r.상태)}`).join(' ') || '-'}</td></tr>`; }).join('')).join('')}</table></div></div>
@@ -457,7 +457,7 @@ function renderA2() {
           <div class="row"><button class="btn blue" id="draftBtn" ${UI.artSel.length || cur ? '' : 'disabled'}>✨ AI 규칙 초안</button><button class="btn blue" id="cardBtn" ${UI.artSel.length || cur ? '' : 'disabled'} style="background:#2E7D5B">✍️ 자연어로 작성</button><button class="btn ghost" id="blankBtn">빈 규칙으로 시작</button><select id="loadRule"><option value="">기존 규칙 불러와 새 버전 작성</option>${B.규칙.filter(r => ['조건판정', '체크리스트'].includes(r.유형)).map(r => `<option value="${r.id}">${esc(r.id + ' ' + r.이름)}</option>`).join('')}</select></div></div></div></div></div>`;
 }
 
-// ③ 규칙 작성
+// ④ 규칙 작성
 function listHtml(filter) {
   const xs = A.rules.filter(filter);
   return xs.map(r => `<div class="kxi ${UI.sel === r.key ? 'on' : ''}" data-open="${r.key}"><i style="background:var(--${r.상태 === '확정' || r.상태 === '배포됨' ? 'green' : r.상태 === '검토 요청' ? 'orange' : 'blue'})"></i><div style="flex:1"><div class="row between"><b class="small">${esc(r.id)}</b>${pill(r.상태)}</div><div class="small">${esc(r.이름 || '(이름 없음)')}</div><div class="muted small">${esc(r.유형)} · ${esc(r.의무분류)}${r.base ? ' · 새 버전' : ''}${r.AI ? ' · AI 초안' : ''}${r.카드 ? ' · 자연어' : ''}</div></div></div>`).join('') || '<p class="muted small">초안이 없습니다. ② 조문에서 AI 초안을 만들거나 빈 규칙으로 시작하세요.</p>';
@@ -564,7 +564,7 @@ $('a3').addEventListener('click', e => {
   if (act.dataset.act === 'delete') { if (!confirm(`${d.id} 초안을 삭제할까요?`)) return; A.rules = A.rules.filter(r => r !== d); logA(`${d.id} 삭제`); UI.sel = null; saveA(); return renderA3(); }
   if (act.dataset.act === 'request') {
     if (B.규칙.some(r => r.id === d.id) && d.base !== d.id) return toast(`${d.id}는 이미 있는 규칙 ID입니다. 다른 ID를 쓰세요`);
-    d.상태 = '검토 요청'; d.작성자 = ME(); d.이력.unshift({ t: nowStr(), who: ME(), 상태: '검토 요청', 의견: '' }); logA(`${d.id} 검토 요청`); saveA(); toast('검토 요청했습니다 — ④ 검토·확정에서 다른 사용자가 확정합니다'); UI.rsel = d.key; return renderA3();
+    d.상태 = '검토 요청'; d.작성자 = ME(); d.이력.unshift({ t: nowStr(), who: ME(), 상태: '검토 요청', 의견: '' }); logA(`${d.id} 검토 요청`); saveA(); toast('검토 요청했습니다 — ⑤ 검토·확정에서 다른 사용자가 확정합니다'); UI.rsel = d.key; return renderA3();
   }
 });
 
@@ -588,7 +588,7 @@ $('a2').addEventListener('change', e => {
 $('a2').addEventListener('input', e => { if (e.target.id === 'artQ') { UI.q = e.target.value; const pos = e.target.selectionStart; renderA2(); const q = $('artQ'); q.focus(); q.setSelectionRange(pos, pos); } });
 $('a1').addEventListener('click', e => { const g = e.target.closest('[data-go]'); if (g) return showTab(g.dataset.go); const o = e.target.closest('[data-open]'); if (o) { e.preventDefault(); UI.sel = o.dataset.open; showTab(['검토 요청'].includes(D()?.상태) ? 'a4' : 'a3'); } });
 
-// ④ 검토·확정
+// ⑤ 검토·확정
 function renderA4() {
   const q = A.rules.filter(r => r.상태 === '검토 요청');
   if (!q.some(r => r.key === UI.rsel)) UI.rsel = q[0]?.key || null;
@@ -610,7 +610,7 @@ function renderA4() {
         <input type="text" id="rvMemo" style="width:100%" placeholder="예: 원문과 일치 확인 / 수정 요청 사유">
         <div class="row" style="margin-top:8px"><button class="btn green" data-rv="ok" ${!self && allIss && pass === cases.length ? '' : 'disabled title="쟁점 확인·사례 통과·작성자와 다른 검토자가 필요합니다"'}>✔ 확정</button><button class="btn orange" data-rv="fix" ${self ? 'disabled' : ''}>수정 요청</button><button class="btn ghost" data-rv="no" style="color:var(--red)" ${self ? 'disabled' : ''}>반려</button></div></div>`;
   }
-  $('a4').innerHTML = `<div class="card"><h2 style="margin:0">검토·확정</h2><p class="desc" style="margin:2px 0 0">작성자와 다른 검토자가 원문 대조 · 쟁점 확인 · 사례 통과 후 확정 · 확정한 규칙은 ⑤ 배포로 넘어갑니다</p>
+  $('a4').innerHTML = `<div class="card"><h2 style="margin:0">검토·확정</h2><p class="desc" style="margin:2px 0 0">작성자와 다른 검토자가 원문 대조 · 쟁점 확인 · 사례 통과 후 확정 · 확정한 규칙은 ⑥ 배포로 넘어갑니다</p>
     <div class="grid2" style="grid-template-columns:280px 1fr;margin-top:12px"><div style="border:1px solid var(--line);border-radius:10px;padding:8px">${q.map(r => `<div class="kxi ${UI.rsel === r.key ? 'on' : ''}" data-rsel="${r.key}"><i style="background:var(--orange)"></i><div style="flex:1"><b class="small">${esc(r.id)}</b><div class="small">${esc(r.이름)}</div><div class="muted small">${esc(r.작성자)} · ${esc(r.이력[0]?.t || '')}</div></div></div>`).join('') || '<p class="muted small">대기 없음</p>'}</div><div>${det}</div></div></div>`;
 }
 $('a4').addEventListener('click', e => {
@@ -620,11 +620,11 @@ $('a4').addEventListener('click', e => {
   if (act !== 'ok' && !memo) return toast('수정 요청·반려 사유를 입력하세요');
   d.상태 = act === 'ok' ? '확정' : act === 'fix' ? '수정 요청' : '반려'; d.검토자 = ME(); if (act === 'ok') d.확정일 = nowStr();
   d.이력.unshift({ t: nowStr(), who: ME(), 상태: d.상태, 의견: memo }); logA(`${d.id} ${d.상태}${memo ? ' — ' + memo : ''}`); saveA();
-  toast(act === 'ok' ? `${d.id} 확정 — ⑤ 배포에서 패키지로 내보낼 수 있습니다` : `${d.id} ${d.상태}`); render();
+  toast(act === 'ok' ? `${d.id} 확정 — ⑥ 배포에서 패키지로 내보낼 수 있습니다` : `${d.id} ${d.상태}`); render();
 });
 $('a4').addEventListener('change', e => { const i = e.target.dataset.iss; if (i === undefined) return; const d = A.rules.find(r => r.key === UI.rsel); d.쟁점[+i].ok = e.target.checked; saveA(); renderA4(); });
 
-// ⑤ 배포
+// ⑥ 배포
 function nextVer() { const d = new Date(); return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}-${String(A.pkgs.length + 1).padStart(3, '0')}`; }
 function renderA5() {
   const ready = A.rules.filter(r => r.상태 === '확정');
@@ -661,7 +661,7 @@ $('a5').addEventListener('click', e => {
   }
 });
 
-// ⑥ 필드 사전
+// ⑦ 표준 테이블
 const allRules = () => [...B.규칙.map(r => ({ r, src: '저장소' })), ...A.rules.filter(d => d.유형 !== '해석' && !B.규칙.some(r => r.id === d.id && d.base === d.id && false)).map(d => ({ r: toRule(d), src: d.상태 }))];
 function usage() { const u = {}; allRules().forEach(({ r, src }) => ruleFields(r).forEach(f => { (u[f] ||= new Set()).add(r.id + (src === '저장소' || src === '배포됨' || src === '확정' ? '' : '(초안)')); })); return u; }
 const SQLT = { '예/아니오': 'BOOLEAN', 날짜: 'DATE', 숫자: 'NUMERIC', 코드: 'VARCHAR(40)', 텍스트: 'VARCHAR(400)' };
@@ -689,7 +689,7 @@ $('a6').addEventListener('click', e => {
   if (e.target.id === 'regMissing') { const U = usage(); const miss = Object.keys(U).filter(f => !fieldOf(f)); miss.forEach(f => (A.fields ||= []).push({ 필드: f, 이름: f.replace(/_/g, ' '), 엔터티: EXT, 형식: /일$|일자$/.test(f) ? '날짜' : '예/아니오', 구분: '입력', 계산: '적재 프로그램 또는 담당자 입력', 제안: 'AI', 키워드: [] })); logA(`확장 사실 항목 등록: ${miss.join(', ')}`); saveA(); toast(`${miss.length}개 항목을 std_fact에 등록했습니다`); return renderA6(); }
   if (e.target.id === 'ddlDl') { const sql = `-- RegAI 표준 테이블 (${today()})\n\n` + [...ENT().filter(x => x.엔터티 !== EXT), ENT().find(x => x.엔터티 === EXT) || { 엔터티: EXT }].map(ddl).join('\n\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([sql], { type: 'text/plain' })); a.download = 'std_tables.sql'; a.click(); }
 });
-// ⑦ 데이터 적재 (고객별 적재 프로그램 — 고객 커스터마이징은 여기만)
+// ⑧ 데이터 적재 (고객별 적재 프로그램 — 고객 커스터마이징은 여기만)
 const CUST = () => B.매핑 || [];
 function mapOf(ci, f) { const c = CUST()[ci]; const o = A.map?.[c.고객]?.[f]; if (o) return o; const ex = c.예외?.[f]; if (ex) return ex; const fd = fieldOf(f); if (fd?.엔터티 === EXT) return { 원천: 'RegAI 입력 화면 (std_fact)', 상태: '입력' }; if (c.기본상태 === '연결' && fd) return { 원천: c.기본원천 + (fd.구분 === '계산' ? ' (공통 계산)' : ''), 상태: fd.구분 === '계산' ? '계산' : '연결' }; return { 원천: c.기본원천 || '', 상태: c.기본상태 || '없음' }; }
 const MLAB = { 연결: '그대로 복사', 변환: '변환 후 적재', 계산: '적재 시 계산', 입력: '담당자 입력', 없음: '데이터 없음' };
@@ -720,13 +720,166 @@ $('a7').addEventListener('change', e => {
   logA(`${c.고객} 적재 설정: ${f} ${e.target.dataset.k} → ${e.target.value}`); saveA(); renderA7();
 });
 
+// ---------------------------------------------------------------- ③ 별표 표 (기준 테이블 — 규칙이 아니라 데이터로 버전 관리)
+const QT = B.규정수량표;
+const TCOL = { 별표2: ['연번', '물질명', 'CAS', '구분', '함량', '최하위', '하위', '상위'], 별표3: ['번호', '물질명', 'CAS', '함량', '최하위', '하위', '상위', '액체적용'] };
+const TNAME = { 별표2: '별표 2 · 물질별 규정수량 (인체급성·인체만성·생태유해성)', 별표3: '별표 3 · 사고대비물질별 규정수량' };
+const NUMC = ['함량', '최하위', '하위', '상위'];
+const TUSE = ['R-QTY-1 물질별 규정수량 구간 판정', 'R-GRP-1 계획서 작성수준 (구간 결과 사용)', 'R-PLAN-NEW 신규 제출 (규정수량 이상 증가)'];
+const SAMPLE = { 별표3: `동작	번호	물질명	CAS	함량	최하위	하위	상위
+수정	4	메틸알코올[Methylalcohol]	67-56-1	85	0.05	2	80
+수정	99	스티렌[Styrene; Ethenylbenzene; Vinylbenzene]	100-42-5	25	0.125	5	100
+추가	105	아세트알데히드[Acetaldehyde]	75-07-0	25	0.05	2	50
+삭제	1	포르말린 또는 포름알데히드(폼알데하이드)[Formalin;Formaldehyde]	50-00-0				`,
+  별표2: `동작	연번	물질명	CAS	구분	함량	최하위	하위	상위
+수정		염산 [Hydrochloric acid]	7647-01-0	급성	10	0.2	5	30
+수정		수산화 나트륨	1310-73-2	급성	5	0.5	10	120` };
+const tblVers = t => ((A.tables ||= {})[t] ||= []);
+const rowKeyTxt = (t, r) => `${r.CAS?.[0] || '-'}${t === '별표2' ? ' · ' + (r.구분 || '') : r.액체적용 ? ' · 액체(*)' : ''}`;
+function parseTable(raw, t) {
+  const lines = String(raw || '').split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return { rows: [], errs: ['붙여넣은 내용이 없습니다'] };
+  const sep = lines[0].includes('\t') ? '\t' : ',';
+  const split = l => { if (sep === '\t') return l.split('\t').map(x => x.trim()); const out = []; let cur = '', q = false; for (const ch of l) { if (ch === '"') q = !q; else if (ch === ',' && !q) { out.push(cur.trim()); cur = ''; } else cur += ch; } out.push(cur.trim()); return out; };
+  const head = split(lines[0]).map(h => h.replace(/\s/g, '').replace(/^(번호|연번|No\.?)$/i, t === '별표2' ? '연번' : '번호').replace(/^CAS(No\.?)?$/i, 'CAS'));
+  if (!head.includes('CAS') && !head.includes('물질명')) return { rows: [], errs: ['첫 줄에 머리글(물질명·CAS·하위 등)이 필요합니다'] };
+  const rows = lines.slice(1).map((l, i) => { const c = split(l), o = { _line: i + 2 }; head.forEach((h, j) => { o[h] = c[j] ?? ''; }); return o; });
+  return { rows, errs: [] };
+}
+function diffTable(t, v) {
+  const { rows, errs } = parseTable(v.원본, t), base = QT[t], changed = [], added = [], removed = [], E = [...errs];
+  const num = x => x === '' || x == null || x === '-' ? null : Number(String(x).replace(/,/g, ''));
+  const seen = new Set();
+  rows.forEach(p => {
+    const cas = String(p.CAS || '').split(/[;/]\s*/).map(x => x.trim()).filter(Boolean), act = (p.동작 || '').trim();
+    const 행 = { 물질명: p.물질명 || '', CAS: cas, ...(t === '별표2' ? { 구분: p.구분 || '', 연번: num(p.연번) } : { 번호: num(p.번호), 액체적용: /\*|예|true|y/i.test(p.액체적용 || '') }) };
+    NUMC.forEach(k => { if (k in p) 행[k] = num(p[k]); });
+    const bad = []; cas.forEach(c => { if (!/^\d{2,7}-\d{2}-\d$/.test(c)) bad.push(`CAS 형식 '${c}'`); });
+    NUMC.forEach(k => { if (행[k] != null && (isNaN(행[k]) || 행[k] < 0)) bad.push(`${k} 숫자 아님`); });
+    if (act !== '삭제' && 행.최하위 != null && 행.하위 != null && 행.최하위 > 행.하위) bad.push('최하위 > 하위');
+    if (act !== '삭제' && 행.하위 != null && 행.상위 != null && 행.하위 > 행.상위) bad.push('하위 > 상위');
+    if (행.함량 != null && 행.함량 > 100) bad.push('함량 > 100%');
+    let cand = base.map((r, idx) => ({ r, idx })).filter(({ r }) => cas.length ? cas.some(c => r.CAS.includes(c)) : r.물질명 === 행.물질명);
+    if (t === '별표2' && 행.구분) cand = cand.filter(({ r }) => r.구분 === 행.구분);
+    if (t === '별표3') cand = cand.filter(({ r }) => !!r.액체적용 === !!행.액체적용);
+    if (cand.length > 1 && 행.물질명) { const c2 = cand.filter(({ r }) => r.물질명.replace(/\s/g, '').startsWith(행.물질명.replace(/\s/g, '').split('[')[0])); if (c2.length) cand = c2; }
+    if (cand.length > 1 && 행.함량 != null) { const c2 = cand.filter(({ r }) => r.함량 === 행.함량); if (c2.length) cand = c2; }
+    if (cand.length > 1) { const no = t === '별표2' ? 행.연번 : 행.번호; const c2 = cand.filter(({ r }) => (t === '별표2' ? r.연번 : r.번호) === no); if (c2.length === 1) cand = c2; }
+    if (bad.length) return E.push(`${p._line}행 ${행.물질명 || cas.join(',')}: ${bad.join(', ')}`);
+    if (act === '추가' || (!act && !cand.length)) { if (cand.length && act === '추가') return E.push(`${p._line}행 ${행.물질명}: 이미 있는 물질 — '수정'으로`); return added.push(행); }
+    if (!cand.length) return E.push(`${p._line}행 ${행.물질명 || cas.join(',')}: 현행 표에서 찾을 수 없음`);
+    if (cand.length > 1) return E.push(`${p._line}행 ${행.물질명 || cas.join(',')}: 같은 물질 행이 ${cand.length}개 — 물질명·함량·${t === '별표2' ? '연번' : '번호'}으로 구분 필요`);
+    const { r, idx } = cand[0]; if (seen.has(idx)) return E.push(`${p._line}행: 같은 행이 두 번 나옴`); seen.add(idx);
+    if (act === '삭제') return removed.push({ idx, r });
+    const 값 = {}; NUMC.forEach(k => { if (k in 행 && 행[k] !== (r[k] ?? null)) 값[k] = 행[k]; }); if (행.물질명 && 행.물질명 !== r.물질명 && !/^\s*$/.test(행.물질명) && !r.물질명.startsWith(행.물질명.split('[')[0].trim())) 값.물질명 = 행.물질명;
+    if (Object.keys(값).length) changed.push({ idx, r, 값 });
+  });
+  if (!v.변경분만) base.forEach((r, idx) => { if (!seen.has(idx) && !removed.some(x => x.idx === idx)) removed.push({ idx, r, 자동: true }); });
+  return { changed, added, removed, errs: E, t: nowStr() };
+}
+function applyTable(t, v) { // 개정 후 표 (시행일 기준 판정용)
+  const T = { ...QT, 별표2: QT.별표2.slice(), 별표3: QT.별표3.slice() }, d = v.diff;
+  d.changed.forEach(c => { T[t][c.idx] = { ...T[t][c.idx], ...c.값 }; });
+  d.removed.forEach(c => { T[t][c.idx] = { ...T[t][c.idx], 폐지일: '0000-01-01' }; });
+  d.added.forEach(r => T[t].push({ ...r }));
+  return T;
+}
+function tableImpact(t, v) {
+  const after = { ...B, 규정수량표: applyTable(t, v), 수량: {} }, before = { ...B, 수량: {} }, date = v.시행일 || today(), out = [];
+  const cas = new Set([...v.diff.changed.map(c => c.r.CAS), ...v.diff.removed.map(c => c.r.CAS), ...v.diff.added.map(r => r.CAS)].flat());
+  (B.사업장목록 || []).forEach(s => s.물질.filter(m => cas.has(m.CAS)).forEach(m => {
+    const inp = { CAS: m.CAS, 함량: m.함량, 성상: m.성상, 보유량: m.최대보유량_t };
+    const a = qtyJudge(before, inp, date), b = qtyJudge(after, inp, date);
+    out.push({ s, m, a, b, 변화: (a.구간 || '대상 아님') !== (b.구간 || '대상 아님') });
+  }));
+  return out;
+}
+const TB = { 작성: ['작성 중', '수정 요청'] };
+function renderA8() {
+  UI.tbl ||= '별표3'; const t = UI.tbl, vers = tblVers(t), v = vers.find(x => x.key === UI.tv);
+  const q = (UI.tq || '').trim(), rows = QT[t].map((r, idx) => ({ r, idx })).filter(({ r }) => !q || r.물질명.includes(q) || r.CAS.some(c => c.includes(q)));
+  const verList = `<div class="kxi ${!v ? 'on' : ''}" data-tv=""><div style="flex:1"><b class="small">현행 (저장소)</b><div class="muted small">${esc(QT.출처?.[t] || '')} · ${QT[t].length}행</div></div><span class="pill green" style="font-size:10.5px;align-self:center">적용 중</span></div>`
+    + vers.map(x => `<div class="kxi ${x.key === UI.tv ? 'on' : ''}" data-tv="${x.key}"><div style="flex:1"><b class="small">v${x.ver} ${esc(x.이름 || '개정안')}</b><div class="muted small">시행 ${esc(x.시행일 || '-')} · ${x.diff ? `수정 ${x.diff.changed.length} · 추가 ${x.diff.added.length} · 삭제 ${x.diff.removed.length}` : '비교 전'}</div></div><span style="align-self:center;white-space:nowrap;flex:none">${pill(x.상태)}</span></div>`).join('');
+  const cell = (r, k) => k === 'CAS' ? r.CAS.join(', ') : k === '액체적용' ? (r.액체적용 ? '*' : '') : r[k] ?? '';
+  let right;
+  if (!v) right = `<div class="result" style="background:#fff"><div class="row between"><h3 style="margin:0">${esc(TNAME[t])}</h3><input type="text" id="tq" value="${esc(q)}" placeholder="CAS 또는 물질명 검색" style="width:220px"></div>
+      <p class="small muted" style="margin:4px 0">${esc(QT.출처?.고시 || '')} · ${esc(QT.출처?.비고 || '')}</p>
+      <table style="font-size:12px"><tr>${TCOL[t].map(k => `<th>${k}</th>`).join('')}</tr>${rows.slice(0, 60).map(({ r }) => `<tr>${TCOL[t].map(k => `<td>${esc(cell(r, k))}</td>`).join('')}</tr>`).join('')}</table>
+      <p class="small muted">${rows.length}행 중 ${Math.min(60, rows.length)}행 표시${rows.length > 60 ? ' — 검색으로 좁히세요' : ''}</p>
+      <details><summary class="small">일반기준 (판정 로직에 반영 — R-QTY-1)</summary>${(QT.일반기준?.[t] || []).map(x => `<p class="small">${esc(x)}</p>`).join('')}</details></div>`;
+  else {
+    const ro = !TB.작성.includes(v.상태), d = v.diff, self = v.작성자 === ME(), imp = d && !d.errs.length ? tableImpact(t, v) : [];
+    const val = (r, c, k) => { const o = r[k] ?? null, n = c.값[k]; return k in c.값 ? `<td style="background:#FFF4E5"><s class="muted">${esc(o ?? '-')}</s> → <b>${esc(n ?? '-')}</b></td>` : `<td>${esc(o ?? '')}</td>`; };
+    right = `<div class="result" style="background:#fff"><div class="row between"><h3 style="margin:0">v${v.ver} ${esc(v.이름 || '개정안')} ${pill(v.상태)}</h3><span class="row">
+        ${TB.작성.includes(v.상태) ? `<button class="btn blue sm" data-tact="request" ${d && !d.errs.length && (d.changed.length + d.added.length + d.removed.length) ? '' : 'disabled title="비교 결과 오류 0건, 변경 1건 이상 필요"'}>검토 요청 →</button><button class="btn ghost sm" data-tact="del" style="color:var(--red)">삭제</button>` : ''}
+        ${v.상태 === '검토 요청' ? (self ? '<span class="small muted">다른 사용자가 확정합니다 (작성자≠검토자)</span>' : '<button class="btn green sm" data-tact="ok">확정</button><button class="btn ghost sm" data-tact="back">수정 요청</button>') : ''}
+        ${v.상태 === '확정' ? '<button class="btn blue sm" data-tact="deploy">시연 화면에 배포 →</button>' : ''}</span></div>
+      <fieldset ${ro ? 'disabled' : ''} style="border:0;padding:0;margin:8px 0 0"><div class="row" style="align-items:flex-end"><label class="field"><span>개정 이름</span><input type="text" data-tb="이름" value="${esc(v.이름 || '')}" style="width:220px"></label><label class="field"><span>출처 고시</span><input type="text" data-tb="출처고시" value="${esc(v.출처고시 || '')}" placeholder="예: 화학물질안전원고시 제2027-○호" style="width:260px"></label><label class="field"><span>시행일</span><input type="date" data-tb="시행일" value="${esc(v.시행일 || '')}"></label></div>
+        <label class="field" style="width:100%;margin-top:6px"><span>개정 표 붙여넣기 <span class="muted" style="font-weight:400">— 엑셀에서 복사 (첫 줄 머리글: ${TCOL[t].join(', ')} · 선택: 동작=수정/추가/삭제)</span></span><textarea data-tb="원본" style="width:100%;min-height:130px;font-family:ui-monospace,monospace;font-size:12px" placeholder="${esc(['동작', ...TCOL[t]].join('\t'))}">${esc(v.원본 || '')}</textarea></label>
+        <div class="row" style="margin-top:4px"><label class="small"><input type="checkbox" data-tb="변경분만" ${v.변경분만 !== false ? 'checked' : ''}> 바뀐 행만 붙여넣음 (나머지 행은 그대로)</label>
+          <button class="btn ghost sm" data-tact="sample">예시 개정안 넣기 (가상)</button><button class="btn ghost sm" data-tact="ai">✨ AI로 표 정리 (PDF·HWP 복사본)</button><button class="btn blue sm" data-tact="diff">현행과 비교 →</button></div></fieldset></div>
+      ${d ? `<div class="grid6" style="margin-top:10px">${kpi(d.changed.length, '값 수정')}${kpi(d.added.length, '행 추가')}${kpi(d.removed.length, '행 삭제')}${kpi(d.errs.length, '검증 오류', d.errs.length)}${kpi(imp.filter(x => x.변화).length, '구간이 바뀌는 사업장 물질', imp.some(x => x.변화))}${kpi(imp.length, '영향 받는 사업장 물질')}</div>
+      ${d.errs.length ? `<div class="result hit"><h3>검증 오류 — 고친 뒤 다시 비교</h3>${d.errs.map(e => `<div class="small">• ${esc(e)}</div>`).join('')}</div>` : ''}
+      <div class="result" style="background:#fff"><h3>신·구 비교 <span class="muted small">— 바뀐 행만</span></h3><table style="font-size:12px"><tr><th>구분</th>${TCOL[t].filter(k => k !== 'CAS').map(k => `<th>${k}</th>`).join('')}<th>CAS</th></tr>
+        ${d.changed.map(c => `<tr><td><span class="pill orange" style="font-size:10px">수정</span></td>${TCOL[t].filter(k => k !== 'CAS').map(k => NUMC.includes(k) || k === '물질명' ? val(c.r, c, k) : `<td>${esc(cell(c.r, k))}</td>`).join('')}<td>${esc(c.r.CAS.join(', '))}</td></tr>`).join('')}
+        ${d.added.map(r => `<tr style="background:#EEF8F1"><td><span class="pill green" style="font-size:10px">추가</span></td>${TCOL[t].filter(k => k !== 'CAS').map(k => `<td>${esc(cell(r, k))}</td>`).join('')}<td>${esc(r.CAS.join(', '))}</td></tr>`).join('')}
+        ${d.removed.slice(0, 30).map(c => `<tr style="background:#FDEEEE"><td><span class="pill red" style="font-size:10px">삭제</span></td>${TCOL[t].filter(k => k !== 'CAS').map(k => `<td><s>${esc(cell(c.r, k))}</s></td>`).join('')}<td>${esc(c.r.CAS.join(', '))}</td></tr>`).join('')}
+        ${d.removed.length > 30 ? `<tr><td colspan="9" class="small muted">삭제 ${d.removed.length - 30}행 더 — '바뀐 행만' 체크를 해제하면 붙여넣지 않은 행은 모두 삭제로 봅니다</td></tr>` : ''}</table></div>
+      ${imp.length ? `<div class="result ${imp.some(x => x.변화) ? 'hit' : ''}" style="${imp.some(x => x.변화) ? '' : 'background:#fff'}"><h3>우리 사업장 영향 <span class="muted small">— 시행일 ${esc(v.시행일 || today())} 기준 R-QTY-1 재판정</span></h3><table style="font-size:12px"><tr><th>사업장</th><th>물질</th><th>최대보유량</th><th>현행</th><th>개정 후</th></tr>
+        ${imp.map(x => `<tr><td>${esc(x.s.사업장)}</td><td>${esc(x.m.이름)}</td><td>${x.m.최대보유량_t} t</td><td>${x.a.해당 ? `${esc(x.a.구간)} <span class="muted">(하위 ${x.a.하위} · 상위 ${x.a.상위 ?? '-'})</span>` : '대상 아님'}</td><td>${x.b.해당 ? `<b style="color:${x.변화 ? 'var(--red)' : 'inherit'}">${esc(x.b.구간)}</b> <span class="muted">(하위 ${x.b.하위} · 상위 ${x.b.상위 ?? '-'}${x.b.표 !== x.a.표 ? ' · ' + esc(x.b.표) : ''})</span>` : '<b>대상 아님</b>'} ${x.변화 ? '<span class="pill red" style="font-size:10px">구간 변경</span>' : ''}</td></tr>`).join('')}</table>
+        ${imp.some(x => x.변화) ? '<p class="small" style="margin:6px 0 0">→ 구간이 바뀐 사업장은 계획서 작성수준(R-GRP-1)·신규·변경 제출 여부 재검토 필요</p>' : ''}</div>` : ''}` : '<p class="muted small" style="margin-top:10px">표를 붙여넣고 "현행과 비교"를 누르세요.</p>'}
+      ${v.상태 === '검토 요청' && !self ? `<div class="result" style="background:#fff"><label class="field" style="width:100%"><span>검토 의견</span><input type="text" id="tbMemo" style="width:100%" placeholder="원문 대조 결과"></label></div>` : ''}
+      <details><summary class="small">이력 ${v.이력.length}건</summary>${v.이력.map(h => `<div class="small">${esc(h.t)} · ${esc(h.who)} · <b>${esc(h.상태)}</b> ${esc(h.의견 || '')}</div>`).join('')}</details>`;
+  }
+  $('a8').innerHTML = `<div class="card"><div class="row between"><div><h2 style="margin:0">별표 표 <span class="muted small">— 기준 테이블</span></h2><p class="desc" style="margin:2px 0 0">별표 표는 규칙으로 만들지 않고 <b>데이터로 버전 관리</b> · 규칙은 표를 참조만 함 · 개정되면 바뀐 행만 검수 → 확정 → 판정 자동 반영</p></div>
+      <div class="row">${['별표3', '별표2'].map(x => `<button class="btn ${x === t ? 'blue' : 'ghost'} sm" data-tbl="${x}">${x === '별표3' ? '별표 3 사고대비물질' : '별표 2 유해화학물질'}</button>`).join('')}</div></div>
+      <p class="small" style="margin:6px 0 0">이 표를 쓰는 규칙: ${TUSE.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</p></div>
+    <div class="grid2" style="grid-template-columns:300px 1fr;margin-top:12px"><div><div class="row between" style="margin-bottom:6px"><b class="small">버전</b><button class="btn blue sm" data-tact="new">+ 새 개정 버전</button></div><div style="border:1px solid var(--line);border-radius:10px;padding:6px">${verList}</div></div><div>${right}</div></div>`;
+}
+$('a8').addEventListener('click', async e => {
+  const tb = e.target.closest('[data-tbl]'); if (tb) { UI.tbl = tb.dataset.tbl; UI.tv = null; return renderA8(); }
+  const tv = e.target.closest('[data-tv]'); if (tv) { UI.tv = tv.dataset.tv || null; return renderA8(); }
+  const a = e.target.closest('[data-tact]'); if (!a) return; const t = UI.tbl, vers = tblVers(t), v = vers.find(x => x.key === UI.tv), act = a.dataset.tact;
+  const hist = (상태, 의견) => v.이력.unshift({ t: nowStr(), who: ME(), 상태, 의견 });
+  if (act === 'new') { A.seq++; const nv = { key: 'T' + A.seq, 표: t, ver: vers.length + 1, 이름: `${t === '별표3' ? '별표 3' : '별표 2'} 개정`, 출처고시: '', 시행일: '', 원본: '', 변경분만: true, 상태: '작성 중', 작성자: ME(), 검토자: '', diff: null, 이력: [{ t: nowStr(), who: ME(), 상태: '작성 중', 의견: '새 개정 버전' }] }; vers.push(nv); UI.tv = nv.key; logA(`${t} v${nv.ver} 개정 버전 생성`); saveA(); return render(); }
+  if (!v) return;
+  if (act === 'sample') { Object.assign(v, { 원본: SAMPLE[t], 이름: '규정수량 개정 (가상 — 시연용)', 출처고시: '화학물질안전원고시 제2027-○호 (가상)', 시행일: v.시행일 || '2027-07-01', 변경분만: true, diff: null }); saveA(); return renderA8(); }
+  if (act === 'diff') { const ta = document.querySelector('#a8 textarea[data-tb="원본"]'); if (ta) v.원본 = ta.value; v.diff = diffTable(t, v); hist(v.상태, `현행과 비교: 수정 ${v.diff.changed.length} · 추가 ${v.diff.added.length} · 삭제 ${v.diff.removed.length} · 오류 ${v.diff.errs.length}`); saveA(); return renderA8(); }
+  if (act === 'ai') {
+    const ta = document.querySelector('#a8 textarea[data-tb="원본"]'); const raw = ta?.value || v.원본; if (!raw.trim()) return toast('PDF·HWP에서 복사한 표 내용을 먼저 붙여넣으세요');
+    if (!aiOn()) return toast('생성형 AI 연결이 필요합니다 (시연 화면 AI 설정) — 또는 엑셀에서 복사해 붙여넣으세요');
+    a.disabled = true; a.textContent = 'AI가 표를 정리하는 중…';
+    try { const out = await llm(`너는 법령 별표 표를 정리하는 도구다. 사용자가 PDF·HWP에서 복사해 줄이 깨진 표 텍스트를 준다. 탭(\\t)으로 구분한 표만 출력한다(설명·코드펜스 금지). 첫 줄 머리글: 동작\\t${TCOL[t].join('\\t')}. 동작은 비워 둔다. 숫자는 단위 없이, 값이 없으면 빈칸. 원문에 없는 값을 만들지 않는다.`, raw); v.원본 = out.replace(/```[a-z]*|```/g, '').trim(); v.diff = null; hist(v.상태, 'AI로 표 정리'); saveA(); toast('표를 정리했습니다 — 원문과 대조 후 "현행과 비교"'); } catch (err) { toast('AI 표 정리 실패: ' + err.message); }
+    return renderA8();
+  }
+  if (act === 'del') { if (!confirm(`v${v.ver}를 삭제할까요?`)) return; A.tables[t] = vers.filter(x => x !== v); UI.tv = null; saveA(); return render(); }
+  if (act === 'request') { if (!v.시행일) return toast('시행일을 입력하세요'); v.상태 = '검토 요청'; hist('검토 요청'); logA(`${t} v${v.ver} 검토 요청`); saveA(); toast('검토 요청했습니다 — 다른 사용자가 확정합니다'); return render(); }
+  if (act === 'ok') { v.상태 = '확정'; v.검토자 = ME(); v.확정일 = today(); hist('확정', $('tbMemo')?.value.trim()); logA(`${t} v${v.ver} 확정`); saveA(); toast('확정 — "시연 화면에 배포"로 판정에 반영'); return render(); }
+  if (act === 'back') { v.상태 = '수정 요청'; hist('수정 요청', $('tbMemo')?.value.trim()); saveA(); return render(); }
+  if (act === 'deploy') {
+    let S; try { S = JSON.parse(localStorage.getItem(MAIN_KEY)); } catch (err) { S = null; }
+    if (!S || !S.approvals) return toast('시연 화면을 이 브라우저에서 한 번 연 뒤 다시 배포하세요');
+    const base = { notice: null, 규칙: '수량기준', 종류: '별표행', 표: t, 시행일: v.시행일, 승인자: v.검토자, 일시: nowStr(), 의견: `저작 도구 ${t} v${v.ver} ${v.이름 || ''}`.trim(), 출처: v.출처고시 || '' };
+    v.diff.changed.forEach(c => S.approvals.push({ ...base, 동작: '수정', idx: c.idx, 이름: c.r.물질명, CAS: c.r.CAS[0], 값: c.값 }));
+    v.diff.added.forEach(r => S.approvals.push({ ...base, 동작: '추가', 이름: r.물질명, CAS: r.CAS[0], 행: r }));
+    v.diff.removed.forEach(c => S.approvals.push({ ...base, 동작: '삭제', idx: c.idx, 이름: c.r.물질명, CAS: c.r.CAS[0] }));
+    try { localStorage.setItem(MAIN_KEY, JSON.stringify(S)); } catch (err) { return toast('시연 화면 저장 실패'); }
+    v.상태 = '배포됨'; v.배포일 = nowStr(); hist('배포됨', `시연 화면 반영 ${v.diff.changed.length + v.diff.added.length + v.diff.removed.length}건`); logA(`${t} v${v.ver} 시연 화면 배포`); saveA(); toast(`배포 완료 — ${v.시행일}부터 시연 화면 판정에 적용됩니다`); return render();
+  }
+});
+$('a8').addEventListener('change', e => {
+  const k = e.target.dataset.tb; if (!k) return; const v = tblVers(UI.tbl).find(x => x.key === UI.tv); if (!v) return;
+  v[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; if (k === '원본' || k === '변경분만') v.diff = null; saveA(); if (k !== '원본') renderA8();
+});
+$('a8').addEventListener('input', e => { if (e.target.id === 'tq') { UI.tq = e.target.value; const pos = e.target.selectionStart; renderA8(); const q = $('tq'); q.focus(); q.setSelectionRange(pos, pos); } });
+
 // ---------------------------------------------------------------- 공통
 function render() {
   $('fdl').innerHTML = FIELDS().map(f => `<option value="${esc(f.필드)}">${esc(f.엔터티 + ' · ' + f.이름 + ' (' + f.구분 + ')')}</option>`).join('');
-  ({ a1: renderA1, a2: renderA2, a3: renderA3, a4: renderA4, a5: renderA5, a6: renderA6, a7: renderA7 })[UI.tab]();
+  ({ a1: renderA1, a2: renderA2, a3: renderA3, a4: renderA4, a5: renderA5, a6: renderA6, a7: renderA7, a8: renderA8 })[UI.tab]();
   const n = s => A.rules.filter(r => r.상태 === s).length;
   const mf = Object.keys(usage()).filter(f => !fieldOf(f)).length + (A.fields || []).filter(f => f.제안 && !f.확인).length;
-  [['d3', n('작성 중') + n('수정 요청')], ['d4', n('검토 요청')], ['d5', n('확정')], ['d6', mf]].forEach(([id, c]) => { $(id).textContent = c; $(id).classList.toggle('hidden', !c); });
+  [['d3', n('작성 중') + n('수정 요청')], ['d4', n('검토 요청')], ['d5', n('확정')], ['d6', mf], ['d8', Object.values(A.tables || {}).flat().filter(v => v.상태 === '검토 요청').length]].forEach(([id, c]) => { $(id).textContent = c; $(id).classList.toggle('hidden', !c); });
 }
 $('who').onchange = () => render();
 $('resetA').onclick = e => { e.preventDefault(); if (confirm('저작 도구의 초안·이력·배포 기록을 모두 지울까요? (시연 화면 데이터는 그대로)')) { seedA(); UI.sel = null; render(); toast('초기화했습니다'); } };

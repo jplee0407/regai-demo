@@ -42,7 +42,7 @@ export function evalCond(cond, input) {
     return { ok, matched: ok ? parts.flatMap(p => p.matched) : [] };
   }
   const ok = input[cond.필드] === cond.같음;
-  return { ok, matched: ok ? [{ 설명: cond.설명, 근거: cond.근거 }] : [] };
+  return { ok, matched: ok ? [{ 설명: cond.설명, 근거: cond.근거, 필드: cond.필드 }] : [] };
 }
 
 function cite(bundle, ids, date) {
@@ -142,7 +142,10 @@ export function impact(bundle, changedIds) {
 export function qtyJudge(bundle, m, date) {
   const rule = bundle.규칙.find(r => r.유형 === '수량판정');
   const v = activeVersion(rule, date);
-  const T = bundle.규정수량표;
+  // 별표 행 버전: 행.시행일(추가)·폐지일(삭제)·개정[](값 변경)을 판정 기준일로 적용
+  const eff = r => { if (!r.개정) return r; const o = r.개정.filter(x => x.시행일 <= date).sort((a, b) => a.시행일 < b.시행일 ? -1 : 1).pop(); return o ? { ...r, ...o.값, _개정: o.시행일 } : r; };
+  const live = r => (!r.시행일 || r.시행일 <= date) && (!r.폐지일 || r.폐지일 > date);
+  const T0 = bundle.규정수량표, T = { 별표2: T0.별표2.filter(live).map(eff), 별표3: T0.별표3.filter(live).map(eff) };
   const ov = (bundle.수량 || {})[m.CAS] || [];
   const 성상 = m.성상 || '액체';
   const 함량 = Number(m.함량 ?? 100);
@@ -173,6 +176,7 @@ export function qtyJudge(bundle, m, date) {
   const pick = 함량OK.slice().sort((a, b) => (a.하위 ?? 1e9) - (b.하위 ?? 1e9))[0];
   if (함량OK.length > 1) 메모.push(`복수 구분 ${함량OK.map(r => r.구분 || r.물질명).join('·')} 중 ${v.옵션.복수구분 === '최소값' ? '가장 낮은 규정수량' : '첫 번째'} 적용`);
   let { 최하위, 하위, 상위 } = pick;
+  if (pick._개정) 메모.push(`별표 개정 반영 (시행 ${pick._개정})`);
   const o = ov.filter(x => x.시행일 <= date).sort((a, b) => a.시행일 < b.시행일 ? -1 : 1).pop();
   if (o) { 하위 = o.하위; 메모.push(`승인된 개정 반영: 하위 ${o.하위} t (시행 ${o.시행일})`); }
   const q = Number(m.보유량);
