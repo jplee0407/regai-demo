@@ -12,6 +12,28 @@ const OBL = B.의무 || [];
 const SUBS = OBL.flatMap(o => (o.세부 || []).map(s => ({ ...s, 상위: o })));
 const oblName = c => { const s = SUBS.find(x => x.코드 === c); return s ? `${s.코드} ${s.이름}` : c || '미분류'; };
 const PEOPLE = [...(B.본사?.담당자 || [])];
+// 표준 데이터 모델 (필드 사전) + 고객별 매핑
+const ENT = () => [...(B.필드 || []).map(e => ({ 엔터티: e.엔터티, 필드: [...e.필드, ...((A && A.fields) || []).filter(f => f.엔터티 === e.엔터티)] })), ...[...new Set(((A && A.fields) || []).map(f => f.엔터티))].filter(n => !(B.필드 || []).some(e => e.엔터티 === n)).map(n => ({ 엔터티: n, 필드: A.fields.filter(f => f.엔터티 === n) }))];
+const FIELDS = () => ENT().flatMap(e => e.필드.map(f => ({ ...f, 엔터티: e.엔터티 })));
+const fieldOf = n => FIELDS().find(f => f.필드 === n);
+const FCLR = { 원천: 'navy', 계산: 'green', 입력: 'orange' };
+function ruleFields(r) {
+  const v = r.버전.find(x => !x.폐지일) || r.버전[r.버전.length - 1], out = [];
+  const walk = c => { if (!c) return; if (c.any) c.any.forEach(walk); else if (c.all) c.all.forEach(walk); else if (c.필드) out.push(c.필드); };
+  if (r.유형 === '조건판정') { walk(v.조건); if (v.결과?.기한?.기준필드) out.push(v.결과.기한.기준필드); }
+  if (r.유형 === '결정표') out.push('사업장군', '위험도', '최근_검사일', '연속적합_횟수', '검사기관수');
+  if (r.유형 === '수량판정') out.push('CAS', '함량', '성상', '최대보유량_t');
+  if (r.유형 === '사업장판정') out.push('규정수량_구간', '주요취급시설_운영');
+  if (r.유형 === '체크리스트') out.push('표시_항목');
+  if (r.유형 === '기준표') (v.열 || []).filter(c => c.종류 === '조건').forEach(c => out.push(c.이름));
+  return [...new Set(out)];
+}
+// 조문 문구 → 사전 필드 (키워드가 가장 길게 맞는 필드)
+function matchField(text) {
+  let best = null, len = 0;
+  FIELDS().forEach(f => (f.키워드 || []).forEach(k => { if (text.includes(k) && k.length > len) { best = f; len = k.length; } }));
+  return best;
+}
 const AKEY = 'regai-author-v1', MAIN_KEY = 'regai-demo-v8';
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2800); }
 
@@ -111,12 +133,15 @@ function heuristicDraft(ids) {
   else if (isCheck) { d.필수항목 = parts.map(p => ({ 이름: p.replace(/[.。]$/, '').slice(0, 40), 근거: ids[0] })); }
   else {
     const conds = parts.length ? parts : [((text.match(/([^.。]{4,80}?)\s*경우/) || [])[1] || (first?.a.제목 || '해당 요건')).replace(/^.*?\)\s*/, '')];
-    const seen = {}; d.조건.항목 = conds.slice(0, 8).map(t => { let f = slug(t); seen[f] = (seen[f] || 0) + 1; if (seen[f] > 1) f += '_' + seen[f]; return { 필드: f, 설명: t.length > 60 ? t.slice(0, 58) + '…' : t, 근거: ids[0] }; });
+    const seen = {}; d.조건.항목 = conds.slice(0, 8).map(t => { const mf = matchField(t); let f = mf ? mf.필드 : slug(t); seen[f] = (seen[f] || 0) + 1; if (seen[f] > 1) f += '_' + seen[f]; return { 필드: f, 설명: t.length > 60 ? t.slice(0, 58) + '…' : t, 근거: ids[0] }; });
   }
   d.이름 = (first?.a.제목 ? first.a.제목 : '규칙') + (d.결과.조치 && !first?.a.제목?.includes(d.결과.조치) ? ` — ${d.결과.조치}` : '');
   d.설명 = `${first ? first.lab : ''} 원문에서 추출한 ${TYPES[d.유형].split(' ')[0]} 초안`;
   const hit = OBL_KW.find(([re]) => re.test(text)); if (hit) d.의무분류 = hit[1];
+  if (k.기준필드) { const mk = matchField(k.기준필드.replace(/_/g, ' ')) || matchField(text.slice(Math.max(0, text.search(/\d+\s*(일|개월|년)/) - 30), text.search(/\d+\s*(일|개월|년)/) + 1)); if (mk && mk.형식 === '날짜') k.기준필드 = mk.필드; }
   d.쟁점 = [{ t: 'AI가 원문에서 자동 추출한 초안 — 조건·항목 문구와 필드명을 원문과 대조', ok: false }];
+  const unknown = [...d.조건.항목.map(c => c.필드), k.기준필드].filter(f => f && !fieldOf(f));
+  if (unknown.length) d.쟁점.push({ t: `필드 사전에 없는 데이터: ${unknown.join(', ')} — 사전에 등록하거나 기존 필드로 바꾸기 (고객 데이터 매핑 필요)`, ok: false });
   if (k.기준필드) d.쟁점.push({ t: `기한 기준일 '${k.기준필드}'과 일수·개월·년 값이 원문과 맞는지 확인`, ok: false });
   if (/"[^"]+"\s*이?란|이란\s/.test(text)) d.쟁점.push({ t: '용어 정의 조문 — 판정 규칙보다 분류·기준 데이터(P5)나 해석으로 두는 것이 맞는지 확인', ok: false });
   if (/규칙\s*제\d+조|법\s*제\d+조|별표/.test(text)) d.쟁점.push({ t: '다른 조문·별표를 인용함 — 인용 조문도 근거로 연결할지 확인', ok: false });
@@ -167,6 +192,110 @@ async function aiDraft(ids) {
   } catch (err) { toast('생성형 AI 응답을 쓰지 못해 규칙 기반 추출로 초안을 만들었습니다: ' + String(err.message || err).slice(0, 60)); return base; }
 }
 
+// ---------------------------------------------------------------- 지식 카드 (문장으로 쓰면 AI가 규칙으로 변환)
+const CARD_KEYS = [['누가', '적용 대상', '예: 화학사고예방관리계획서 제출 대상 사업장'], ['언제', '의무가 생기는 경우', '예: 취급시설 용량이 늘어나거나, 새 시설을 설치하거나, 위험이 증가하는 변경을 할 때'], ['무엇을', '해야 할 일 (제출처·서식 포함)', '예: 변경된 계획서를 화학물질안전원장에게 제출 (별지 제32호서식)'], ['언제까지', '기한', '예: 변경이 끝나기 30일 전까지 / 통지를 받은 날부터 60일 이내 / 5년마다'], ['예외', '예외·주의 (해석으로 연결)', '예: 계획서 범위 안의 일시적 재고 증가는 해당 없음 (질의회신)']];
+function newCard(ids = []) {
+  const d = blank(); d.카드 = { 누가: '', 언제: '', 무엇을: '', 언제까지: '', 예외: '' }; d.근거 = [...ids]; d.이름 = '';
+  if (ids.length) { const h = heuristicDraft(ids); const ph = ids.map(id => ART.find(x => x.id === id)?.a.내용 || '').join(' ');
+    const act = plain(h.결과.조치 || '');
+    d.카드 = { 누가: '', 언제: h.조건.항목.filter(c => !c.모두).map(c => cut(plain(c.설명.replace(/…$/, '')))).join(', 또는 '), 무엇을: [act, h.결과.제출처 && !act.includes(h.결과.제출처) && `${h.결과.제출처}에게`, h.결과.서식 && `(${h.결과.서식})`].filter(Boolean).join(' ') || (h.필수항목.length ? `다음 항목을 표시: ${h.필수항목.map(i => i.이름).join(', ')}` : ''), 언제까지: dueText(ph), 예외: '' };
+    d.출처고시 = h.출처고시; d.의무분류 = h.의무분류; }
+  d.변환 = null; return d;
+}
+// 쉬운 말 → 사전 필드 (동의어 정리 후 키워드·필드 이름 토큰 점수, 형식 가중)
+const SYN = [[/늘어나|늘리|커지|많아지|증대/g, '증가'], [/(^|\s)새(로|롭게)?\s/g, '$1신규 새로운 '], [/추가되|추가될|추가하/g, '추가'], [/바뀌|바꾸/g, '변경'], [/옮기/g, '이전'], [/끝나는 날|완료일|완료 예정일|완료예정일/g, '변경완료 예정일']];
+const STOP = new Set(['여부', '받음', '있는', '대상', '확인', '라벨에']);
+function matchCard(text, want) {
+  let t = ' ' + text + ' '; SYN.forEach(([re, to]) => { t = t.replace(re, to); }); const n = t.replace(/\s+/g, '');
+  let best = null, top = 0;
+  FIELDS().forEach(f => {
+    const kw = Math.max(0, ...(f.키워드 || []).map(k => k.replace(/\s+/g, '')).filter(k => n.includes(k)).map(k => k.length));
+    const tok = (f.이름 || '').split(/[\s·ㆍ()→/]+/).filter(w => w.length >= 2 && !STOP.has(w) && n.includes(w)).reduce((a, w) => a + w.length, 0);
+    let sc = Math.max(kw * 1.5, tok); if (sc < 2) return;
+    if (want && f.형식 === want) sc += 3; else if (want === '날짜' && f.형식 !== '날짜') return;
+    if (sc > top) { top = sc; best = f; }
+  });
+  return best;
+}
+const plain = t => t.replace(/「[^」]*」/g, '규정').replace(/「[^」]*$/, '').replace(/((법|규칙|영|시행규칙)\s*)?(별표\s*\d+(\s*비고\s*제\s*\d+\s*호)?|제\s*\d+\s*조(의\s*\d+)?(제\s*\d+\s*항)?(제\s*\d+\s*호)?)(\s*및\s*(규칙\s*)?제\s*\d+\s*조(의\d+)?(제\s*\d+\s*항)?)?\s*(에\s*따른|에\s*따라|의)?\s*/g, '').replace(/\s+/g, ' ').trim();
+const cut = (t, n = 48) => t.length > n ? t.slice(0, t.lastIndexOf(' ', n) > 20 ? t.lastIndexOf(' ', n) : n) + '…' : t;
+function dueText(ph) {
+  const m = ph.match(/(\d+\s*(일|개월|년)\s*(이전|전|이내|마다))/); if (!m) return '';
+  const pre = plain(ph.slice(0, m.index)).split(/[,，]|따른 |하는 /).at(-1).trim().split(/\s+/).slice(-3).join(' ');
+  return `${pre} ${m[1]}${/마다/.test(m[3]) ? '' : '까지'}`.trim();
+}
+const cardText = c => CARD_KEYS.map(([k]) => `${k}: ${c[k] || '(없음)'}`).join('\n');
+function compileCardHeur(d) {
+  const c = d.카드, all = Object.values(c).join(' ');
+  // 패턴
+  const list = (c.무엇을.match(/[:：]\s*(.+)$/) || [])[1];
+  const items = list ? list.split(/\s*,\s*/).filter(Boolean) : [];
+  d.유형 = !c.언제.trim() && items.length >= 3 ? '체크리스트' : '조건판정';
+  // 조건: '거나', '또는', ',' 로 나눔
+  const parts = c.언제.replace(/(할 때|하는 경우|인 경우|경우|때)\s*$/, '').split(/\s*(?:하거나|이거나|거나|또는|,|，)\s*/).map(s => s.trim()).filter(s => s.length > 1);
+  d.조건.mode = /모두|그리고|동시에/.test(c.언제) ? 'all' : 'any';
+  const seen = {}; const unknown = [];
+  d.조건.항목 = parts.map(t => { const mf = matchCard(t, '예/아니오'); let f = mf ? mf.필드 : slug(t); if (!mf) unknown.push(f); seen[f] = (seen[f] || 0) + 1; if (seen[f] > 1) f += '_' + seen[f]; return { 필드: f, 설명: t, 근거: d.근거[0] || '' }; });
+  // 결과
+  let m; d.결과.조치 = c.무엇을.replace(/\([^)]*\)/g, '').replace(/[가-힣]+(?:원장|장관|청장|시장|군수|구청장|지사)에게\s*/, '').replace(/[:：].*$/, '').trim();
+  d.결과.제출처 = (c.무엇을.match(/([가-힣]+(?:원장|장관|청장|시장|군수|구청장|지사))에게/) || [])[1] || '';
+  d.결과.서식 = ((c.무엇을.match(/별지\s*제\s*\d+\s*호\s*서식/) || [''])[0]).replace(/\s+/g, '');
+  if (items.length) d.필수항목 = items.map(i => ({ 이름: i, 근거: d.근거[0] || '' }));
+  // 기한
+  const k = d.결과.기한 = { 기준필드: '', 일수: '', 개월: '', 년: '', 근거: d.근거[0] || '' }, t = c.언제까지;
+  const base = s => { const mf = matchCard(s, '날짜'); return mf ? mf.필드 : (s.trim().split(/\s+/).slice(-2).join('_').replace(/[^가-힣A-Za-z0-9_]/g, '') || '기준일'); };
+  if ((m = t.match(/(.*?)\s*(\d+)\s*일\s*(?:전|이전)/))) { k.기준필드 = base(m[1]); k.일수 = -Number(m[2]); }
+  else if ((m = t.match(/(.*?)(?:부터|로부터)\s*(\d+)\s*(일|개월|년)/))) { k.기준필드 = base(m[1]); k[{ 일: '일수', 개월: '개월', 년: '년' }[m[3]]] = Number(m[2]); }
+  else if ((m = t.match(/(\d+)\s*년\s*마다/))) { k.기준필드 = base(t); k.년 = Number(m[1]); }
+  else if ((m = t.match(/(.*?)\s*(\d+)\s*(일|개월|년)\s*(?:이내|안에)/))) { k.기준필드 = base(m[1]); k[{ 일: '일수', 개월: '개월', 년: '년' }[m[3]]] = Number(m[2]); }
+  if (!k.기준필드) k.근거 = '';
+  if (k.기준필드 && !fieldOf(k.기준필드)) unknown.push(k.기준필드);
+  // 이름·설명·의무
+  if (!d.이름) d.이름 = d.결과.조치 ? d.결과.조치.slice(0, 40) : '지식 카드 규칙';
+  d.설명 = [c.누가 && `대상: ${c.누가}`, c.언제 && `${c.언제} →`, c.무엇을, c.언제까지 && `(${c.언제까지})`].filter(Boolean).join(' ');
+  const hit = OBL_KW.find(([re]) => re.test(all)); if (hit) d.의무분류 = hit[1];
+  d.쟁점 = [{ t: 'AI가 지식 카드 문장을 규칙으로 변환 — 조건·필드·기한을 카드와 대조', ok: false }];
+  if (unknown.length) d.쟁점.push({ t: `필드 사전에 없는 데이터: ${[...new Set(unknown)].join(', ')} — 사전 등록 또는 기존 필드로 변경`, ok: false });
+  if (c.예외.trim()) d.쟁점.push({ t: `예외는 해석으로 연결됨: ${c.예외.trim()}`, ok: false });
+  if (c.누가.trim()) d.쟁점.push({ t: `적용 대상(${c.누가.trim()})이 조건에 포함되어야 하는지 확인`, ok: false });
+  autoCases(d);
+}
+async function compileCard(d) {
+  compileCardHeur(d); d.변환 = { t: nowStr(), 방식: '규칙 기반', 카드: clone(d.카드) };
+  if (!aiOn()) return;
+  const sys = `너는 화학물질관리법 규칙 작성 전문가다. 컨설턴트가 쓴 '지식 카드'를 판정 규칙 JSON 하나로만 바꾼다(설명 문장, 코드펜스 금지).
+스키마: {"유형":"조건판정|체크리스트","이름":"","의무분류":"코드","조건":{"mode":"any|all","항목":[{"필드":"","설명":""}]},"결과":{"조치":"","제출처":"","서식":"","기한":{"기준필드":"","일수":null,"개월":null,"년":null}},"필수항목":[{"이름":""}],"쟁점":[""]}
+필드는 반드시 아래 표준 필드 사전에서 고르고, 맞는 것이 없으면 새 이름을 만들고 쟁점에 '사전에 없는 데이터'로 적는다. 기한 일수는 '~일 전'이면 음수.
+표준 필드: ${FIELDS().map(f => `${f.필드}(${f.이름}, ${f.형식})`).join(', ')}
+의무분류: ${SUBS.map(s => s.코드 + ' ' + s.이름).join(', ')}`;
+  try {
+    const raw = await llm(sys, cardText(d.카드) + `\n근거: ${d.근거.map(artLab).join(', ')}`), j = JSON.parse(raw.replace(/^```(json)?|```$/gm, '').trim());
+    d.유형 = j.유형 === '체크리스트' ? '체크리스트' : '조건판정'; if (j.이름) d.이름 = j.이름; if (SUBS.some(s => s.코드 === j.의무분류)) d.의무분류 = j.의무분류;
+    if (j.조건?.항목?.length) d.조건 = { mode: j.조건.mode === 'all' ? 'all' : 'any', 항목: j.조건.항목.map(c => ({ 필드: c.필드, 설명: c.설명 || '', 근거: d.근거[0] || '' })) };
+    if (j.결과) { const k = j.결과.기한 || {}; d.결과 = { 조치: j.결과.조치 || '', 제출처: j.결과.제출처 || '', 서식: j.결과.서식 || '', 기한: { 기준필드: k.기준필드 || '', 일수: k.일수 ?? '', 개월: k.개월 ?? '', 년: k.년 ?? '', 근거: k.기준필드 ? d.근거[0] || '' : '' } }; }
+    if (j.필수항목?.length) d.필수항목 = j.필수항목.map(i => ({ 이름: i.이름, 근거: d.근거[0] || '' }));
+    d.쟁점 = [{ t: '생성형 AI가 지식 카드를 규칙으로 변환 — 카드와 대조', ok: false }, ...(j.쟁점 || []).map(t => ({ t, ok: false })), ...(d.카드.예외 ? [{ t: `예외는 해석으로 연결됨: ${d.카드.예외}`, ok: false }] : [])];
+    autoCases(d); d.변환.방식 = '생성형 AI';
+  } catch (err) { toast('생성형 AI 변환 실패 — 규칙 기반 변환 결과를 표시합니다'); }
+}
+function cardHtml(d, ro) {
+  const c = d.카드, stale = d.변환 && JSON.stringify(d.변환.카드) !== JSON.stringify(c);
+  const condView = d.조건.항목.map(x => { const f = fieldOf(x.필드); return `<div class="small" style="margin:3px 0">• ${esc(x.설명)} → <code>${esc(x.필드)}</code> ${f ? `<span class="pill ${FCLR[f.구분]}" style="font-size:10px">${esc(f.구분)}</span>` : '<span class="pill red" style="font-size:10px">사전에 없음</span>'}</div>`; }).join('');
+  const k = d.결과.기한;
+  return `<div class="grid2" style="grid-template-columns:1fr 1fr;gap:12px">
+    <div class="result" style="background:#fff;border-color:var(--blue)"><h3>📝 지식 카드 <span class="muted small">— 문장으로 쓰세요</span></h3>
+      ${CARD_KEYS.map(([key, lab, ph]) => `<label class="field" style="width:100%;margin-bottom:6px"><span>${esc(key)} <span class="muted" style="font-weight:400">${esc(lab)}</span></span><textarea data-b="카드.${key}" placeholder="${esc(ph)}" style="width:100%;min-height:${key === '언제' ? 58 : 40}px" ${ro ? 'disabled' : ''}>${esc(c[key])}</textarea></label>`).join('')}
+      <div class="small muted">근거 조문은 아래 '변환된 규칙'에서 연결</div>
+      ${ro ? '' : `<div class="row" style="margin-top:6px"><button class="btn blue" data-act="compile">✨ AI로 규칙 변환 →</button><span class="small" data-stale ${stale ? '' : 'hidden'} style="color:var(--orange)">카드가 바뀌었습니다 — 다시 변환하세요</span></div>`}</div>
+    <div class="result" style="background:${d.변환 ? '#F6FBF8' : '#fff'}"><h3>AI 변환 결과 ${d.변환 ? `<span class="muted small">${esc(d.변환.방식)} · ${esc(d.변환.t)}</span>` : ''}</h3>
+      ${d.변환 ? `<div class="kv" style="grid-template-columns:80px 1fr"><b>패턴</b><span>${esc(TYPES[d.유형])}</span><b>의무</b><span class="small">${esc(oblName(d.의무분류))}</span>
+        ${d.유형 === '조건판정' ? `<b>IF ${d.조건.mode === 'any' ? '하나라도' : '모두'}</b><span>${condView || '<span class="small muted">조건 없음</span>'}</span><b>THEN</b><span class="small">${esc(d.결과.조치)}${d.결과.제출처 ? ' · ' + esc(d.결과.제출처) : ''}${d.결과.서식 ? ' · ' + esc(d.결과.서식) : ''}</span>` : `<b>항목</b><span class="small">${d.필수항목.map(i => esc(i.이름)).join(', ')}</span>`}
+        <b>기한</b><span class="small">${k.기준필드 ? `<code>${esc(k.기준필드)}</code> ${[k.년 && `${k.년}년`, k.개월 && `${k.개월}개월`, k.일수 !== '' && k.일수 != null && `${k.일수}일`].filter(Boolean).join(' ')} ${fieldOf(k.기준필드) ? '' : '<span class="pill red" style="font-size:10px">사전에 없음</span>'}` : '없음'}</span>
+        <b>해석</b><span class="small">${c.예외.trim() ? `배포 시 해석으로 등록·연결: ${esc(c.예외.trim())}` : '-'}</span>
+        <b>검증</b><span class="small">사례 ${d.사례.length}개 자동 생성 (아래에서 확인)</span></div>
+        <p class="small muted" style="margin:6px 0 0">세부 수정은 아래 '변환된 규칙'에서 · 필드는 필드 사전과 연결됨</p>` : '<p class="muted small">왼쪽 카드를 채우고 "AI로 규칙 변환"을 누르세요.</p>'}</div></div>`;
+}
+
 // ---------------------------------------------------------------- 검증 (초안 그대로 엔진 실행)
 function runCase(d, c) {
   let act = {};
@@ -187,7 +316,7 @@ function runCase(d, c) {
 
 // ---------------------------------------------------------------- 화면
 const UI = { tab: 'a1', sel: null, art: null, artSel: [], q: '', law: '' };
-function showTab(t) { UI.tab = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); ['a1', 'a2', 'a3', 'a4', 'a5'].forEach(x => $(x).classList.toggle('hidden', x !== t)); render(); window.scrollTo({ top: 0 }); }
+function showTab(t) { UI.tab = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'].forEach(x => $(x).classList.toggle('hidden', x !== t)); render(); window.scrollTo({ top: 0 }); }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.t));
 const pill = s => `<span class="pill ${ST_CLR[s] || 'gray'}">${esc(s)}</span>`;
 const kpi = (v, l, a) => `<div class="kpi ${a ? 'alert' : ''}"><div class="v">${v}</div><div class="l">${l}</div></div>`;
@@ -259,20 +388,22 @@ function renderA2() {
         <div class="small muted" style="margin:4px 0 8px">${esc(cur.a.법령명)} · 시행 ${esc(cur.a.시행일)}</div><div class="arttext">${esc(cur.a.내용)}</div>
         <div class="kv" style="margin-top:10px"><b>이 조문을 쓰는 규칙</b><span>${usedBy(cur.id).map(esc).join(', ') || '<span style="color:var(--red)">없음 — 규칙화 대상</span>'}</span></div></div>` : '<p class="muted">왼쪽에서 조문을 고르세요.</p>'}
         <div class="result" style="background:#fff;border-color:var(--blue)"><h3>AI 규칙 초안 만들기</h3><p class="small" style="margin:0 0 8px">선택한 조문 ${UI.artSel.length || (cur ? 1 : 0)}개: ${(UI.artSel.length ? UI.artSel : cur ? [cur.id] : []).map(id => `<span class="chip">${esc(artLab(id))}</span>`).join('') || '-'}</p>
-          <div class="row"><button class="btn blue" id="draftBtn" ${UI.artSel.length || cur ? '' : 'disabled'}>✨ AI 규칙 초안</button><button class="btn ghost" id="blankBtn">빈 규칙으로 시작</button><select id="loadRule"><option value="">기존 규칙 불러와 새 버전 작성</option>${B.규칙.filter(r => ['조건판정', '체크리스트'].includes(r.유형)).map(r => `<option value="${r.id}">${esc(r.id + ' ' + r.이름)}</option>`).join('')}</select></div></div></div></div></div>`;
+          <div class="row"><button class="btn blue" id="draftBtn" ${UI.artSel.length || cur ? '' : 'disabled'}>✨ AI 규칙 초안</button><button class="btn blue" id="cardBtn" ${UI.artSel.length || cur ? '' : 'disabled'} style="background:#2E7D5B">📝 지식 카드로 작성</button><button class="btn ghost" id="blankBtn">빈 규칙으로 시작</button><select id="loadRule"><option value="">기존 규칙 불러와 새 버전 작성</option>${B.규칙.filter(r => ['조건판정', '체크리스트'].includes(r.유형)).map(r => `<option value="${r.id}">${esc(r.id + ' ' + r.이름)}</option>`).join('')}</select></div></div></div></div></div>`;
 }
 
 // ③ 규칙 작성
 function listHtml(filter) {
   const xs = A.rules.filter(filter);
-  return xs.map(r => `<div class="kxi ${UI.sel === r.key ? 'on' : ''}" data-open="${r.key}"><i style="background:var(--${r.상태 === '확정' || r.상태 === '배포됨' ? 'green' : r.상태 === '검토 요청' ? 'orange' : 'blue'})"></i><div style="flex:1"><div class="row between"><b class="small">${esc(r.id)}</b>${pill(r.상태)}</div><div class="small">${esc(r.이름 || '(이름 없음)')}</div><div class="muted small">${esc(r.유형)} · ${esc(r.의무분류)}${r.base ? ' · 새 버전' : ''}${r.AI ? ' · AI 초안' : ''}</div></div></div>`).join('') || '<p class="muted small">초안이 없습니다. ② 조문에서 AI 초안을 만들거나 빈 규칙으로 시작하세요.</p>';
+  return xs.map(r => `<div class="kxi ${UI.sel === r.key ? 'on' : ''}" data-open="${r.key}"><i style="background:var(--${r.상태 === '확정' || r.상태 === '배포됨' ? 'green' : r.상태 === '검토 요청' ? 'orange' : 'blue'})"></i><div style="flex:1"><div class="row between"><b class="small">${esc(r.id)}</b>${pill(r.상태)}</div><div class="small">${esc(r.이름 || '(이름 없음)')}</div><div class="muted small">${esc(r.유형)} · ${esc(r.의무분류)}${r.base ? ' · 새 버전' : ''}${r.AI ? ' · AI 초안' : ''}${r.카드 ? ' · 지식 카드' : ''}</div></div></div>`).join('') || '<p class="muted small">초안이 없습니다. ② 조문에서 AI 초안을 만들거나 빈 규칙으로 시작하세요.</p>';
 }
 function renderA3() {
   if (!D() || !['작성 중', '수정 요청'].includes(D().상태)) { const f = A.rules.find(r => ['작성 중', '수정 요청'].includes(r.상태)); UI.sel = f ? f.key : (D() ? UI.sel : null); }
   const d = D();
-  $('a3').innerHTML = `<div class="card"><div class="row between"><div><h2 style="margin:0">규칙 작성</h2><p class="desc" style="margin:2px 0 0">패턴을 고르면 그 패턴의 입력 폼이 나옵니다 · 값마다 근거 조문 · 검증 사례 통과 후 검토 요청</p></div><div class="row"><button class="btn ghost sm" id="newBlank">+ 빈 규칙</button><button class="btn blue sm" data-go="a2">+ 조문에서 AI 초안</button></div></div>
+  $('a3').innerHTML = `<div class="card"><div class="row between"><div><h2 style="margin:0">규칙 작성</h2><p class="desc" style="margin:2px 0 0">패턴을 고르면 그 패턴의 입력 폼이 나옵니다 · 값마다 근거 조문 · 검증 사례 통과 후 검토 요청</p></div><div class="row"><button class="btn blue sm" id="newCard">📝 + 지식 카드</button><button class="btn ghost sm" id="newBlank">+ 빈 규칙</button><button class="btn blue sm" data-go="a2">+ 조문에서 AI 초안</button></div></div>
     <div class="grid2" style="grid-template-columns:280px 1fr;margin-top:12px"><div style="max-height:900px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px">${listHtml(r => r.상태 !== '배포됨')}</div><div id="ed">${d ? editorHtml(d) : '<p class="muted">초안을 고르거나 새로 만드세요.</p>'}</div></div></div>`;
 }
+const fieldChip = n => { if (!n) return ''; const f = fieldOf(n); return f ? `<div class="small" style="margin-top:2px"><span class="pill ${FCLR[f.구분] || 'gray'}" style="font-size:10.5px">${esc(f.구분)}</span> ${esc(f.엔터티)} · ${esc(f.이름)}${f.단위 ? ' (' + esc(f.단위) + ')' : ''}</div>` : `<div class="small" style="margin-top:2px;color:var(--red)">사전에 없음 — <a href="#" data-gofield="${esc(n)}">필드 사전에 등록</a></div>`; };
+const fieldInput = (b, v, w) => `<input type="text" list="fdl" data-b="${b}" value="${esc(v ?? '')}" placeholder="필드 선택 또는 입력" style="width:${w ? w + 'px' : '100%'}">${fieldChip(v)}`;
 const inp = (b, v, w = 260, ph = '') => `<input type="text" data-b="${b}" value="${esc(v ?? '')}" placeholder="${esc(ph)}" style="width:${w}px">`;
 function editorHtml(d) {
   const ro = !['작성 중', '수정 요청'].includes(d.상태);
@@ -281,11 +412,11 @@ function editorHtml(d) {
   let body = '';
   if (d.유형 === '조건판정') {
     body = `<div class="result" style="background:#fff"><div class="row between"><h3 style="margin:0"><span class="step"><b>IF</b></span> 조건</h3><span class="small">${['any', 'all'].map(m => `<label><input type="radio" name="mode" data-mode="${m}" ${d.조건.mode === m ? 'checked' : ''}> ${m === 'any' ? '하나라도 해당' : '모두 해당'}</label>`).join(' ')}</span></div>
-      <div class="condrow small muted"><span>조건 (화면에 보이는 문구)</span><span>필드명 (입력 데이터 키)</span><span>근거 조문</span><span></span></div>
-      ${d.조건.항목.map((c, i) => c.모두 ? `<div class="condrow"><span class="small"><b>모두 해당:</b> ${esc(c.설명)}</span><span class="small muted">${esc(c.필드)}</span><span class="small muted">${esc(artLab(c.근거))}</span><a href="#" data-del="조건.항목.${i}" style="color:var(--red)">✕</a></div>` : `<div class="condrow"><input type="text" data-b="조건.항목.${i}.설명" value="${esc(c.설명)}"><input type="text" data-b="조건.항목.${i}.필드" value="${esc(c.필드)}">${citeSelB(`조건.항목.${i}.근거`, c.근거)}<a href="#" data-del="조건.항목.${i}" style="color:var(--red)">✕</a></div>`).join('')}
+      <div class="condrow small muted"><span>조건 (화면에 보이는 문구)</span><span>데이터 필드 (필드 사전에서 선택)</span><span>근거 조문</span><span></span></div>
+      ${d.조건.항목.map((c, i) => c.모두 ? `<div class="condrow"><span class="small"><b>모두 해당:</b> ${esc(c.설명)}</span><span class="small muted">${esc(c.필드)}</span><span class="small muted">${esc(artLab(c.근거))}</span><a href="#" data-del="조건.항목.${i}" style="color:var(--red)">✕</a></div>` : `<div class="condrow"><input type="text" data-b="조건.항목.${i}.설명" value="${esc(c.설명)}"><div>${fieldInput(`조건.항목.${i}.필드`, c.필드)}</div>${citeSelB(`조건.항목.${i}.근거`, c.근거)}<a href="#" data-del="조건.항목.${i}" style="color:var(--red)">✕</a></div>`).join('')}
       <button class="btn ghost sm" data-add="cond">+ 조건 추가</button></div>
     <div class="result" style="background:#fff"><h3><span class="step"><b>→</b></span> THEN 결과</h3><div class="kv"><b>조치</b><span>${inp('결과.조치', d.결과.조치, 380, '예: 변경된 계획서 제출')}</span><b>제출처</b><span>${inp('결과.제출처', d.결과.제출처, 220, '예: 화학물질안전원장')}</span><b>서식</b><span>${inp('결과.서식', d.결과.서식, 220, '예: 별지 제32호서식')}</span>
-      <b>기한</b><span class="row" style="gap:6px">${inp('결과.기한.기준필드', d.결과.기한.기준필드, 160, '기준일 필드 (예: 변경완료_예정일)')} <input type="number" data-b="결과.기한.일수" value="${esc(d.결과.기한.일수)}" placeholder="일" style="width:70px">일 <input type="number" data-b="결과.기한.개월" value="${esc(d.결과.기한.개월)}" style="width:60px">개월 <input type="number" data-b="결과.기한.년" value="${esc(d.결과.기한.년)}" style="width:60px">년 ${citeSelB('결과.기한.근거', d.결과.기한.근거)}</span></div>
+      <b>기한</b><span class="row" style="gap:6px"><span style="display:inline-block">${fieldInput('결과.기한.기준필드', d.결과.기한.기준필드, 170)}</span> <input type="number" data-b="결과.기한.일수" value="${esc(d.결과.기한.일수)}" placeholder="일" style="width:70px">일 <input type="number" data-b="결과.기한.개월" value="${esc(d.결과.기한.개월)}" style="width:60px">개월 <input type="number" data-b="결과.기한.년" value="${esc(d.결과.기한.년)}" style="width:60px">년 ${citeSelB('결과.기한.근거', d.결과.기한.근거)}</span></div>
       <p class="small muted" style="margin:4px 0 0">음수 = 기준일 이전 (예: -30 = 30일 전) · 기한이 없으면 기준필드를 비워 둡니다</p></div>`;
   } else if (d.유형 === '체크리스트') {
     body = `<div class="result" style="background:#fff"><h3>필수 항목 ${d.필수항목.length}개</h3>${d.필수항목.map((it, i) => `<div class="condrow" style="grid-template-columns:1fr 220px 30px"><input type="text" data-b="필수항목.${i}.이름" value="${esc(it.이름)}">${citeSelB(`필수항목.${i}.근거`, it.근거)}<a href="#" data-del="필수항목.${i}" style="color:var(--red)">✕</a></div>`).join('')}
@@ -305,7 +436,8 @@ function editorHtml(d) {
   const caseForm = d.유형 === '조건판정' ? `<div class="row small" style="margin-top:6px;align-items:flex-end">${d.조건.항목.map(c => `<label><input type="checkbox" data-cf="${esc(c.필드)}"> ${esc(c.설명.slice(0, 14))}</label>`).join('')}${d.결과.기한.기준필드 ? `<label>${esc(d.결과.기한.기준필드)} <input type="date" id="cfDate" value="2027-03-31"></label>` : ''}<label>기대 <select id="cfExp"><option value="1">대상</option><option value="0">대상 아님</option></select></label><button class="btn ghost sm" data-add="case">+ 사례 추가 (기대 기한은 자동 계산)</button></div>`
     : d.유형 === '체크리스트' ? `<div class="row small" style="margin-top:6px"><label>빠진 항목 수 <input type="number" id="cfMiss" value="1" min="0" style="width:60px"></label><button class="btn ghost sm" data-add="case">+ 사례 추가</button></div>`
     : d.유형 === '기준표' ? `<div class="row small" style="margin-top:6px">${d.표.열.filter(c => c.종류 === '조건').map(c => `<label>${esc(c.이름)} <input type="text" data-cfin="${esc(c.이름)}" style="width:80px"></label>`).join('')}${d.표.열.filter(c => c.종류 === '결과').map(c => `<label>기대 ${esc(c.이름)} <input type="text" data-cfout="${esc(c.이름)}" style="width:70px"></label>`).join('')}<button class="btn ghost sm" data-add="case">+ 사례 추가</button></div>` : '';
-  return `<fieldset ${ro ? 'disabled' : ''} style="border:0;padding:0;margin:0">
+  const cardTop = d.카드 ? cardHtml(d, ro) : '';
+  return `${cardTop}${d.카드 ? `<details ${d.변환 ? 'open' : ''}><summary style="margin:8px 0"><b>변환된 규칙 (세부 편집)</b></summary>` : ''}<fieldset ${ro ? 'disabled' : ''} style="border:0;padding:0;margin:0">
     <div class="result ${d.AI ? 'hit' : ''}" style="${d.AI ? '' : 'background:#fff'}"><div class="row between"><h3 style="margin:0">${esc(d.id)} ${pill(d.상태)} ${d.AI ? `<span class="ai">${d.AI === 'LLM' ? '생성형 AI 초안' : 'AI 추출 초안'}</span>` : ''} ${d.base ? `<span class="pill navy">${esc(d.base)} 새 버전</span>` : ''}</h3><span class="row"><button class="btn green sm" data-act="save">저장</button><button class="btn blue sm" data-act="request" ${(d.유형 === '해석' ? d.이름 && d.해석.제목 && d.해석.판단 : pass === cases.length && cases.length && d.이름) ? '' : `disabled title="${d.유형 === '해석' ? '이름·제목·판단 입력이 필요합니다' : '이름 입력과 검증 사례 통과가 필요합니다'}"`}>검토 요청 →</button><button class="btn ghost sm" data-act="delete" style="color:var(--red)">삭제</button></span></div>
       <div class="kv" style="margin-top:8px"><b>패턴</b><span><select data-b="유형" ${d.base ? 'disabled' : ''}>${Object.entries(TYPES).map(([k, t]) => `<option value="${k}" ${k === d.유형 ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></span>
         <b>ID · 이름</b><span>${inp('id', d.id, 140)} ${inp('이름', d.이름, 380, '판정하는 내용을 한 줄로')}</span><b>설명</b><span>${inp('설명', d.설명, 520)}</span>
@@ -318,18 +450,20 @@ function editorHtml(d) {
       ${cases.length ? `<table><tr><th>사례</th><th>입력</th><th>기대</th><th>실제 (엔진)</th><th></th></tr>${cases.map(({ c, act, ok }, i) => `<tr><td class="small">${esc(c.설명)}</td><td class="small"><code>${esc(JSON.stringify(c.입력))}</code></td><td class="small">${esc(JSON.stringify(c.기대))}</td><td class="small"><span class="pill ${ok ? 'green' : 'red'}">${ok ? '통과' : '불일치'}</span> ${esc(JSON.stringify(act))}</td><td><a href="#" data-del="사례.${i}" style="color:var(--red)">✕</a></td></tr>`).join('')}</table>` : '<p class="muted small">사례가 없습니다. 아래에서 추가하세요.</p>'}${caseForm}${cases.some(x => !x.ok) && ['조건판정', '체크리스트'].includes(d.유형) ? `<div class="small" style="margin-top:6px;color:var(--red)">기대값이 지금 규칙과 다릅니다 — 규칙을 의도대로 고쳤다면 <a href="#" data-act="recase">사례 기대값 다시 만들기</a></div>` : ''}</div>` : ''}
     </fieldset>
     <details><summary class="small">저장소에 들어갈 형태 (YAML)</summary><pre style="max-height:360px;overflow:auto">${esc(`# ${d.유형 === '해석' ? 'data/knowledge/interpretations.yaml (항목 추가)' : `rules/${d.id}.yaml${d.base ? ' (새 버전)' : ' (신규)'}`}\n` + toYaml(ruleOrInt))}</pre></details>
-    <details><summary class="small">이력 ${d.이력.length}건</summary>${d.이력.map(h => `<div class="small">${esc(h.t)} · ${esc(h.who)} · <b>${esc(h.상태)}</b> ${esc(h.의견 || '')}</div>`).join('')}</details>`;
+    <details><summary class="small">이력 ${d.이력.length}건</summary>${d.이력.map(h => `<div class="small">${esc(h.t)} · ${esc(h.who)} · <b>${esc(h.상태)}</b> ${esc(h.의견 || '')}</div>`).join('')}</details>${d.카드 ? '</details>' : ''}`;
 }
 function setPath(o, p, v) { const ks = p.split('.'); let x = o; ks.slice(0, -1).forEach(k => { x = x[k]; }); x[ks.at(-1)] = v; }
 function getPath(o, p) { return p.split('.').reduce((x, k) => x?.[k], o); }
 $('a3').addEventListener('change', e => {
   const d = D(); if (!d) return; const t = e.target;
-  if (t.dataset.b) { let v = t.value; if (t.dataset.b === '해석.적용규칙') v = v.split(',').map(s => s.trim()).filter(Boolean); setPath(d, t.dataset.b, v); if (t.dataset.b === '유형') { autoCases(d); } saveA(); return renderA3(); }
+  if (t.dataset.b) { let v = t.value; if (t.dataset.b === '해석.적용규칙') v = v.split(',').map(s => s.trim()).filter(Boolean); setPath(d, t.dataset.b, v); if (t.dataset.b.startsWith('카드.')) { saveA(); const w = document.querySelector('#a3 [data-stale]'); if (w && d.변환) w.hidden = false; return; } if (t.dataset.b === '유형') { autoCases(d); } saveA(); return renderA3(); }
   if (t.dataset.mode) { d.조건.mode = t.dataset.mode; saveA(); return renderA3(); }
 });
 $('a3').addEventListener('click', e => {
   const o = e.target.closest('[data-open]'); if (o) { e.preventDefault(); UI.sel = o.dataset.open; return renderA3(); }
+  const gf = e.target.closest('[data-gofield]'); if (gf) { e.preventDefault(); UI.newField = gf.dataset.gofield; return showTab('a6'); }
   const g = e.target.closest('[data-go]'); if (g) return showTab(g.dataset.go);
+  if (e.target.id === 'newCard') { const d = newCard(); A.rules.unshift(d); UI.sel = d.key; logA(`지식 카드 ${d.id} 생성`); saveA(); return renderA3(); }
   if (e.target.id === 'newBlank') { const d = blank(); A.rules.unshift(d); UI.sel = d.key; logA(`빈 규칙 ${d.id} 생성`); saveA(); return renderA3(); }
   const d = D(); if (!d) return;
   const del = e.target.closest('[data-del]'); if (del) { e.preventDefault(); const p = del.dataset.del.split('.'), idx = +p.pop(), arr = getPath(d, p.join('.')); const rm = arr.splice(idx, 1)[0]; if (p.join('.') === '표.열') d.표.행.forEach(r => delete r[rm.이름]); saveA(); return renderA3(); }
@@ -356,6 +490,7 @@ $('a3').addEventListener('click', e => {
     saveA(); return renderA3();
   }
   const act = e.target.closest('[data-act]'); if (!act) return;
+  if (act.dataset.act === 'compile') { act.disabled = true; act.textContent = aiOn() ? '생성형 AI가 변환 중…' : '변환 중…'; compileCard(d).then(() => { d.이력.unshift({ t: nowStr(), who: ME(), 상태: d.상태, 의견: `지식 카드 변환 (${d.변환.방식})` }); logA(`${d.id} 지식 카드 → 규칙 변환`); saveA(); renderA3(); }); return; }
   if (act.dataset.act === 'recase') { e.preventDefault(); autoCases(d); d.이력.unshift({ t: nowStr(), who: ME(), 상태: d.상태, 의견: '검증 사례 기대값 재생성' }); saveA(); return renderA3(); }
   if (act.dataset.act === 'save') { d.이력.unshift({ t: nowStr(), who: ME(), 상태: d.상태, 의견: '저장' }); logA(`${d.id} 저장`); saveA(); toast('저장했습니다'); return renderA3(); }
   if (act.dataset.act === 'delete') { if (!confirm(`${d.id} 초안을 삭제할까요?`)) return; A.rules = A.rules.filter(r => r !== d); logA(`${d.id} 삭제`); UI.sel = null; saveA(); return renderA3(); }
@@ -374,6 +509,7 @@ $('a2').addEventListener('click', async e => {
     const ids = UI.artSel.length ? UI.artSel : [UI.art]; e.target.disabled = true; e.target.textContent = aiOn() ? '생성형 AI가 초안을 쓰는 중…' : '원문에서 추출 중…';
     const d = await aiDraft(ids); A.rules.unshift(d); UI.sel = d.key; UI.artSel = []; logA(`${ids.map(artLab).join(', ')} → AI 초안 ${d.id}`); saveA(); toast(`${d.id} 초안을 만들었습니다 — 원문과 대조해 고치세요`); return showTab('a3');
   }
+  if (e.target.id === 'cardBtn') { const ids = UI.artSel.length ? UI.artSel : [UI.art]; const d = newCard(ids); A.rules.unshift(d); UI.sel = d.key; UI.artSel = []; logA(`${ids.map(artLab).join(', ')} → 지식 카드 ${d.id}`); saveA(); toast('조문에서 카드 초안을 채웠습니다 — 쉬운 말로 다듬고 "AI로 규칙 변환"을 누르세요'); return showTab('a3'); }
   if (e.target.id === 'blankBtn') { const d = blank(); if (UI.art) d.근거 = [UI.art]; A.rules.unshift(d); UI.sel = d.key; saveA(); return showTab('a3'); }
 });
 $('a2').addEventListener('change', e => {
@@ -432,7 +568,8 @@ function renderA5() {
 function buildPkg() {
   const ready = A.rules.filter(r => r.상태 === '확정');
   return { 패키지: 'regai-화관법-규칙', 버전: $('pkgVer').value, 생성: nowStr(), 배포자: ME(), 요약: $('pkgNote').value, 엔진호환: 'engine.js v1',
-    규칙: ready.filter(r => r.유형 !== '해석').map(r => ({ 구분: r.base ? '새버전' : '신규', 규칙: toRule(r) })), 해석: ready.filter(r => r.유형 === '해석').map(toInt) };
+    규칙: ready.filter(r => r.유형 !== '해석').map(r => ({ 구분: r.base ? '새버전' : '신규', 규칙: toRule(r) })),
+    해석: [...ready.filter(r => r.유형 === '해석').map(toInt), ...ready.filter(r => r.카드?.예외?.trim()).map(r => ({ id: r.id.replace(/^R-/, 'I-') + '-EX', 구분: '컨설턴트 판단', 제목: `${r.이름} — 예외·주의`, 질의: r.카드.언제, 판단: r.카드.예외.trim(), 출처: `지식 카드 ${r.id} (${r.작성자})`, 확인자: r.검토자, 신뢰수준: '내부', 상태: '유효', 일자: today(), 관련조문: r.근거, 적용규칙: [r.id], 적용방법: '판정 시 예외 해당 여부를 담당자가 확인' }))] };
 }
 function markDeployed(pkg, how) { const ids = [...pkg.규칙.map(x => x.규칙.id), ...pkg.해석.map(x => x.id)]; A.rules.filter(r => r.상태 === '확정').forEach(r => { r.상태 = '배포됨'; r.이력.unshift({ t: nowStr(), who: ME(), 상태: '배포됨', 의견: `패키지 ${pkg.버전}` }); }); A.pkgs.unshift({ 버전: pkg.버전, 일시: nowStr(), 배포자: ME(), 규칙: ids, 방식: how, 요약: pkg.요약 }); logA(`패키지 ${pkg.버전} ${how} (${ids.length}건)`); saveA(); }
 $('a5').addEventListener('click', e => {
@@ -455,11 +592,61 @@ $('a5').addEventListener('click', e => {
   }
 });
 
+// ⑥ 필드 사전
+const allRules = () => [...B.규칙.map(r => ({ r, src: '저장소' })), ...A.rules.filter(d => d.유형 !== '해석' && !B.규칙.some(r => r.id === d.id && d.base === d.id && false)).map(d => ({ r: toRule(d), src: d.상태 }))];
+function usage() { const u = {}; allRules().forEach(({ r, src }) => ruleFields(r).forEach(f => { (u[f] ||= new Set()).add(r.id + (src === '저장소' || src === '배포됨' || src === '확정' ? '' : '(초안)')); })); return u; }
+function renderA6() {
+  const U = usage(), F = FIELDS(), missing = Object.keys(U).filter(f => !fieldOf(f));
+  const nf = UI.newField || '';
+  $('a6').innerHTML = `<div class="grid6">${kpi(F.length, '표준 필드')}${kpi(F.filter(f => U[f.필드]).length, '규칙이 쓰는 필드')}${kpi(F.filter(f => f.구분 === '계산').length, '계산 필드 (공통 로직)')}${kpi(F.filter(f => f.구분 === '입력').length, '담당자 입력 필드')}${kpi(missing.length, '사전에 없는 필드', missing.length)}${kpi(ENT().length, '엔터티')}</div>
+    <div class="card"><h2 style="margin:0">필드 사전 (표준 데이터 모델)</h2><p class="desc" style="margin:2px 0 0">규칙은 이 필드 이름만 씁니다 · 고객 데이터는 ⑦에서 이 필드로 매핑 · <span class="pill navy" style="font-size:10.5px">원천</span> 시스템 값 <span class="pill green" style="font-size:10.5px">계산</span> 공통 로직 <span class="pill orange" style="font-size:10.5px">입력</span> 담당자 답변</p>
+      ${missing.length || nf ? `<div class="result hit" style="margin-top:10px"><h3>사전에 없는 필드 — 데이터 정의 필요</h3><div class="chips">${missing.map(f => `<span class="chip"><b>${esc(f)}</b> <span class="small muted">${esc([...U[f]].join(', '))}</span> <a href="#" data-nf="${esc(f)}">등록</a></span>`).join('') || '<span class="small muted">없음</span>'}</div>
+        <div class="row" style="margin-top:8px;align-items:flex-end"><label class="field"><span>필드</span><input type="text" id="nfName" value="${esc(nf)}" style="width:200px"></label><label class="field"><span>이름</span><input type="text" id="nfLabel" style="width:200px"></label>
+          <label class="field"><span>엔터티</span><select id="nfEnt">${ENT().map(e => `<option>${esc(e.엔터티)}</option>`).join('')}</select></label><label class="field"><span>형식</span><select id="nfType">${['예/아니오', '날짜', '숫자', '코드', '텍스트'].map(x => `<option>${x}</option>`).join('')}</select></label>
+          <label class="field"><span>구분</span><select id="nfKind"><option>원천</option><option>계산</option><option>입력</option></select></label><label class="field" style="flex:1"><span>계산·설명</span><input type="text" id="nfCalc" style="width:100%" placeholder="계산식 또는 데이터 설명"></label><button class="btn blue" id="nfSave">사전에 등록</button></div></div>` : ''}
+      ${ENT().map(e => `<h3 style="margin:14px 0 6px">${esc(e.엔터티)} <span class="muted small">${e.필드.length}개</span></h3><table><tr><th>필드</th><th>이름</th><th>형식</th><th>구분</th><th>계산·설명</th><th>사용 규칙</th></tr>${e.필드.map(f => `<tr><td><code>${esc(f.필드)}</code>${f.사용자 ? ' <span class="pill gray" style="font-size:10px">추가</span>' : ''}</td><td>${esc(f.이름)}</td><td class="small">${esc(f.형식)}${f.단위 ? ' · ' + esc(f.단위) : ''}${f.값 ? '<br><span class="muted">' + esc(f.값) + '</span>' : ''}</td><td><span class="pill ${FCLR[f.구분] || 'gray'}" style="font-size:10.5px">${esc(f.구분)}</span></td><td class="small">${esc(f.계산 || f.설명 || '')}</td><td class="small">${U[f.필드] ? [...U[f.필드]].map(esc).join(', ') : '<span class="muted">-</span>'}</td></tr>`).join('')}</table>`).join('')}</div>`;
+}
+$('a6').addEventListener('click', e => {
+  const n = e.target.closest('[data-nf]'); if (n) { e.preventDefault(); UI.newField = n.dataset.nf; return renderA6(); }
+  if (e.target.id === 'nfSave') {
+    const f = $('nfName').value.trim().replace(/\s+/g, '_'); if (!f) return toast('필드 이름을 입력하세요'); if (fieldOf(f)) return toast('이미 있는 필드입니다');
+    (A.fields ||= []).push({ 필드: f, 이름: $('nfLabel').value.trim() || f, 엔터티: $('nfEnt').value, 형식: $('nfType').value, 구분: $('nfKind').value, 계산: $('nfCalc').value.trim(), 사용자: true, 키워드: [] });
+    UI.newField = ''; logA(`필드 사전 등록: ${f}`); saveA(); toast(`${f}를 필드 사전에 등록했습니다 — 고객별 매핑에도 나타납니다`); return renderA6();
+  }
+});
+// ⑦ 고객별 데이터 매핑
+const CUST = () => B.매핑 || [];
+function mapOf(ci, f) { const c = CUST()[ci]; const o = A.map?.[c.고객]?.[f]; if (o) return o; const ex = c.예외?.[f]; if (ex) return ex; const fd = fieldOf(f); if (c.기본상태 === '연결' && fd) return { 원천: c.기본원천 + (fd.구분 === '계산' ? ' (공통 계산)' : ''), 상태: fd.구분 === '계산' ? '계산' : '연결' }; return { 원천: c.기본원천 || '', 상태: c.기본상태 || '없음' }; }
+const MST = ['연결', '변환', '계산', '입력', '없음'], MCLR = { 연결: 'green', 변환: 'navy', 계산: 'green', 입력: 'orange', 없음: 'red' };
+function renderA7() {
+  UI.cust ??= 0; const ci = UI.cust, c = CUST()[ci]; if (!c) { $('a7').innerHTML = '<p class="muted">매핑 데이터가 없습니다.</p>'; return; }
+  const U = usage(), F = FIELDS(), used = F.filter(f => U[f.필드]);
+  const rules = allRules().filter(x => ['저장소', '확정', '배포됨'].includes(x.src)).map(({ r }) => { const need = ruleFields(r), miss = need.filter(f => mapOf(ci, f).상태 === '없음' || !fieldOf(f)); return { r, need, miss }; });
+  const ok = rules.filter(x => !x.miss.length).length, cnt = s0 => used.filter(f => mapOf(ci, f.필드).상태 === s0).length;
+  $('a7').innerHTML = `<div class="card"><div class="row between"><div><h2 style="margin:0">고객별 데이터 매핑</h2><p class="desc" style="margin:2px 0 0">같은 규칙 패키지를 고객마다 매핑만 바꿔 적용 · 원천(고객 시스템) → 표준 필드 · 없는 데이터는 판정 불가로 표시</p></div>
+      <div class="row"><select id="custSel">${CUST().map((x, i) => `<option value="${i}" ${i === ci ? 'selected' : ''}>${esc(x.고객)}</option>`).join('')}</select></div></div>
+      <p class="small" style="margin:8px 0 0"><b>${esc(c.고객)}</b> — ${esc(c.설명)} · 원천 시스템: ${(c.시스템 || []).map(x => `<span class="chip">${esc(x)}</span>`).join('')}</p></div>
+    <div class="grid6">${kpi(`${ok}/${rules.length}`, '자동 판정 가능한 규칙', ok < rules.length)}${MST.map(s0 => kpi(cnt(s0), `규칙 필드 · ${s0}`, s0 === '없음' && cnt(s0))).join('')}</div>
+    <div class="card"><h2>규칙별 적용 가능 여부</h2><table><tr><th>규칙</th><th>의무</th><th>필요한 필드</th><th>판정</th></tr>${rules.map(({ r, need, miss }) => `<tr><td><b>${esc(r.id)}</b> <span class="small">${esc(r.이름)}</span></td><td class="small">${esc(oblName(r.의무분류))}</td><td class="small">${need.map(f => `<span class="pill ${MCLR[mapOf(ci, f).상태] || 'gray'}" style="font-size:10.5px" title="${esc(mapOf(ci, f).원천 || '')}">${esc(f)}</span>`).join(' ')}</td><td>${miss.length ? `<span class="pill red">판정 불가</span> <span class="small">데이터 없음: ${miss.map(esc).join(', ')}</span>` : '<span class="pill green">자동 판정</span>'}</td></tr>`).join('')}</table></div>
+    <div class="card"><h2>필드 매핑 <span class="muted small">— 규칙이 쓰는 필드 ${used.length}개 (원천·상태를 고치면 바로 반영)</span></h2>
+      ${ENT().map(e => { const fs = e.필드.filter(f => U[f.필드]); return fs.length ? `<h3 style="margin:12px 0 6px">${esc(e.엔터티)}</h3><table><tr><th>표준 필드</th><th>정의</th><th>원천 (고객 시스템 위치)</th><th>변환</th><th>상태</th></tr>${fs.map(f => { const m = mapOf(ci, f.필드); return `<tr><td><code>${esc(f.필드)}</code><br><span class="small">${esc(f.이름)}</span></td><td class="small">${esc(f.형식)}${f.단위 ? ' · ' + esc(f.단위) : ''} · <span class="pill ${FCLR[f.구분]}" style="font-size:10px">${esc(f.구분)}</span></td>
+          <td><input type="text" data-m="${esc(f.필드)}" data-k="원천" value="${esc(m.원천 || '')}" style="width:100%"></td><td><input type="text" data-m="${esc(f.필드)}" data-k="변환" value="${esc(m.변환 || '')}" style="width:100%" placeholder="코드·단위 변환"></td>
+          <td><select data-m="${esc(f.필드)}" data-k="상태" style="border-color:var(--${MCLR[m.상태] || 'line'})">${MST.map(s0 => `<option ${s0 === m.상태 ? 'selected' : ''}>${s0}</option>`).join('')}</select></td></tr>`; }).join('')}</table>` : ''; }).join('')}</div>`;
+}
+$('a7').addEventListener('change', e => {
+  if (e.target.id === 'custSel') { UI.cust = +e.target.value; return renderA7(); }
+  const f = e.target.dataset.m; if (!f) return; const c = CUST()[UI.cust];
+  A.map ||= {}; A.map[c.고객] ||= {}; A.map[c.고객][f] = { ...mapOf(UI.cust, f), [e.target.dataset.k]: e.target.value };
+  logA(`${c.고객} 매핑: ${f} ${e.target.dataset.k} → ${e.target.value}`); saveA(); renderA7();
+});
+
 // ---------------------------------------------------------------- 공통
 function render() {
-  ({ a1: renderA1, a2: renderA2, a3: renderA3, a4: renderA4, a5: renderA5 })[UI.tab]();
+  $('fdl').innerHTML = FIELDS().map(f => `<option value="${esc(f.필드)}">${esc(f.엔터티 + ' · ' + f.이름 + ' (' + f.구분 + ')')}</option>`).join('');
+  ({ a1: renderA1, a2: renderA2, a3: renderA3, a4: renderA4, a5: renderA5, a6: renderA6, a7: renderA7 })[UI.tab]();
   const n = s => A.rules.filter(r => r.상태 === s).length;
-  [['d3', n('작성 중') + n('수정 요청')], ['d4', n('검토 요청')], ['d5', n('확정')]].forEach(([id, c]) => { $(id).textContent = c; $(id).classList.toggle('hidden', !c); });
+  const mf = Object.keys(usage()).filter(f => !fieldOf(f)).length;
+  [['d3', n('작성 중') + n('수정 요청')], ['d4', n('검토 요청')], ['d5', n('확정')], ['d6', mf]].forEach(([id, c]) => { $(id).textContent = c; $(id).classList.toggle('hidden', !c); });
 }
 $('who').onchange = () => render();
 $('resetA').onclick = e => { e.preventDefault(); if (confirm('저작 도구의 초안·이력·배포 기록을 모두 지울까요? (시연 화면 데이터는 그대로)')) { seedA(); UI.sel = null; render(); toast('초기화했습니다'); } };
