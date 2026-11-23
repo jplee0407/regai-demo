@@ -1341,6 +1341,12 @@ function cgFlags() {
   const uniq = []; F.forEach(x => { if (!uniq.some(y => y.k === x.k && y.설명 === x.설명)) uniq.push(x); });
   return { F: uniq, qb, qa, g0, g1, after };
 }
+// 판정이 읽은 표준 테이블 컬럼 (규칙 저작 도구 ⑥ 표준 테이블과 동일)
+const COL = n => { const e = (B.필드 || []).find(x => x.필드.some(f => f.필드 === n)); return e ? `${e.테이블}.${n}` : `std_fact[${n}]`; };
+function readCols(r, input) {
+  const v = activeVersion(K.규칙.find(x => x.id === r.규칙), base()), kf = v?.결과?.기한?.기준필드;
+  return [...r.사유.map(m => m.필드).filter(Boolean).map(f => `<code>${esc(COL(f))}</code> = 예`), ...(kf ? [`<code>${esc(COL(kf))}</code> = ${esc(input[kf] || '-')}`] : [])].join(' · ') || '-';
+}
 function runJudge() {
   const R0 = cgFlags();
   const input = { 변경완료_예정일: $('doneDate').value, 검사_개시일: $('inspStart').value };
@@ -1362,6 +1368,7 @@ function runJudge() {
     return `<div class="result hit"><h3><span class="pill red">대상</span> ${esc(r.조치)}</h3>
       <div class="kv"><b>제출 기한</b><span>${r.기한 ? `<b style="color:var(--red)">${esc(r.기한)}</b> (${dday(r.기한)}) · ${esc(r.기한설명)}` : '<span class="muted">기준일 미입력</span>'}${adv ? `<br><span style="color:var(--orange);font-weight:700">권고 ${esc(adv.기한)} (${dday(adv.기한)})</span> <span class="small">— 미확정 개정안 기준·잠정${pn ? ` (${esc(pn.id)}, <a href="#" data-p7="P|${pn.id}|${pn.규칙제안.findIndex(q => q.규칙 === r.규칙)}">②에서 확정</a>)` : ''}</span>` : ''}</span>
       <b>제출처</b><span>${esc(r.제출처)}</span><b>서식</b><span>${esc(r.서식)}</span><b>해당 사유</b><span>${r.사유.map(m => esc(m.설명)).join(', ')}</span>
+      <b>읽은 데이터</b><span class="small">${readCols(r, input)}</span>
       <b>적용 규칙</b><span><span class="pill navy">${esc(r.규칙)} v${r.버전}</span> ${ruleBadge(r.규칙)} 시행 ${esc(r.시행일)}</span>
       <b>의무 · 미이행 시</b><span>${ruleObl(r.규칙) ? `${oblPill(ruleObl(r.규칙))} ${penHtml(oblOf(ruleObl(r.규칙)))}` : '-'}</span></div>
       <details><summary>근거 조문 원문 보기</summary>${citeHtml(r.근거)}</details>
