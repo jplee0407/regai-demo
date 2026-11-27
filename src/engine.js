@@ -42,7 +42,15 @@ export function evalCond(cond, input) {
     return { ok, matched: ok ? parts.flatMap(p => p.matched) : [] };
   }
   const ok = input[cond.필드] === cond.같음;
-  return { ok, matched: ok ? [{ 설명: cond.설명, 근거: cond.근거, 필드: cond.필드 }] : [] };
+  return { ok, matched: ok ? [{ 설명: cond.설명, 근거: cond.근거, 필드: cond.필드, ...(cond.판단 ? { 판단: cond.판단 } : {}) }] : [] };
+}
+// 판단 질문형 조건 중 아직 답(확정값)이 없는 것
+export function pendingJudgements(cond, input, out = []) {
+  if (!cond) return out;
+  if (cond.any) cond.any.forEach(c => pendingJudgements(c, input, out));
+  else if (cond.all) cond.all.forEach(c => pendingJudgements(c, input, out));
+  else if (cond.판단 && input[cond.필드] === undefined) out.push(cond);
+  return out;
 }
 
 function cite(bundle, ids, date) {
@@ -77,12 +85,21 @@ const dueText = s => [s.년 && `${s.년 > 0 ? '+' : ''}${s.년}년`, s.개월 &&
 
 // ① 변경 요청 판정 (조건판정 규칙)
 export function judgeChange(bundle, change, date) {
-  const out = [];
+  const out = [], wait = [];
   for (const rule of bundle.규칙.filter(r => r.유형 === '조건판정')) {
     const v = activeVersion(rule, date);
     if (!v) continue;
     const r = evalCond(v.조건, change);
-    if (!r.ok) continue;
+    if (!r.ok) {
+      // 판단 질문이 남아 있으면 '예'로 가정했을 때 대상이 되는지 보고 판단 대기로 표시 (공식 판정에는 넣지 않음)
+      const pend = pendingJudgements(v.조건, change);
+      if (pend.length) {
+        const r2 = evalCond(v.조건, { ...change, ...Object.fromEntries(pend.map(c => [c.필드, true])) });
+        if (r2.ok) wait.push({ 규칙: rule.id, 규칙명: rule.이름, 버전: v.버전, 조치: v.결과.조치, 기한: v.결과.기한 ? calcDue(v.결과.기한, change) : null,
+          질문: pend.filter(c => r2.matched.some(m => m.필드 === c.필드)), 다른조건: r2.matched.filter(m => !m.판단).map(m => m.설명) });
+      }
+      continue;
+    }
     const 기한 = v.결과.기한 ? calcDue(v.결과.기한, change) : null;
     out.push({
       규칙: rule.id, 규칙명: rule.이름, 버전: v.버전, 시행일: v.시행일,
@@ -92,6 +109,7 @@ export function judgeChange(bundle, change, date) {
       근거: cite(bundle, [...v.근거, ...r.matched.map(m => m.근거), v.결과.기한?.근거].filter(Boolean), date),
     });
   }
+  out.대기 = wait; // 판단 질문 확정이 필요한 규칙
   return out;
 }
 
